@@ -578,17 +578,17 @@ function buildMat(){
   const SaTgt=interp1(S.target.T,S.target.Sa,commonT);
   const validTgt=SaTgt.map(v=>isFinite(v)&&v>0);
   const n=S.records.length;
-  // A: n records, each column = Sa_i/n at commonT  → AvT_mat[k][i]
-  const AvT_mat=commonT.map((_,k)=>S.records.map(r=>{
-    const v=interp1(r.T,r.Sa,[commonT[k]])[0];
-    return isFinite(v)?v/n:0;
-  }));
+
+  // Pre-interpolate ALL records at commonT once — reused by sweep
+  const SaInterp=S.records.map(r=>interp1(r.T,r.Sa,commonT));
+
+  const AvT_mat=commonT.map((_,k)=>SaInterp.map(sa=>isFinite(sa[k])?sa[k]/n:0));
   const validRows=commonT.map((_,k)=>validTgt[k]&&AvT_mat[k].every(v=>v>0));
   const idxV=validRows.map((v,i)=>v?i:-1).filter(i=>i>=0);
-  const Av=idxV.map(i=>AvT_mat[i]);          // |valid|×n
+  const Av=idxV.map(i=>AvT_mat[i]);
   const tv=idxV.map(i=>SaTgt[i]);
   const P=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>(i===j?1:0)-1/n));
-  return {commonT,SaTgt,validTgt,Av,tv,P,n};
+  return {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp};
 }
 
 function solveReg(alpha,Av,tv,P,n,sfmin,sfmax){
