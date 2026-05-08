@@ -621,11 +621,16 @@ function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh){
 }
 
 function computeR2(SFin,commonT,SaTgt,validTgt){
-  const ms=commonT.map((_,k)=>{let s=0;S.records.forEach((r,i)=>{const v=interp1(r.T,r.Sa,[commonT[k]])[0]*SFin[i];s+=isFinite(v)?v:0;});return s/S.records.length;});
-  const v=commonT.map((_,k)=>validTgt[k]&&isFinite(ms[k])&&ms[k]>0);
-  const av=commonT.filter((_,k)=>v[k]).map((_,j)=>ms[commonT.findIndex((_,k)=>v[k]&&!v.slice(0,k).filter(Boolean).length>j)]);
-  // simpler:
-  const idx=v.map((b,i)=>b?i:-1).filter(i=>i>=0);
+  const n=S.records.length;
+  const ms=commonT.map((_,k)=>{
+    let s=0;
+    S.records.forEach((r,i)=>{
+      const v=interp1(r.T,r.Sa,[commonT[k]])[0]*SFin[i];
+      s+=isFinite(v)?v:0;
+    });
+    return s/n;
+  });
+  const idx=validTgt.map((b,i)=>b&&isFinite(ms[i])&&ms[i]>0?i:-1).filter(i=>i>=0);
   const avv=idx.map(i=>ms[i]), tvv=idx.map(i=>SaTgt[i]);
   if(avv.length<2)return -Infinity;
   const mt=mean(tvv);
