@@ -112,7 +112,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
 <div id="panel">
   <div id="hdr">
     <h1>⚡ Response Spectrum Scaling</h1>
-    <p>SpectraScalingGUI v1.3.2 · University of Pardubice</p>
+    <p>SpectraScalingGUI v1.3.3 · University of Pardubice</p>
   </div>
 
   <div id="std-bar">
@@ -574,47 +574,98 @@ function getWindow(){
 }
 
 function buildMat(){
-  const {T1,T2}=getWindow();
+  const isEC8=S.standard==='EC8';
+  const T1=0.2*S.T1, T2=S.T1*(isEC8?2.0:1.5);
   const commonT=linspace(T1,T2,300);
   const SaTgt=interp1(S.target.T,S.target.Sa,commonT);
-  const validTgt=SaTgt.map(v=>isFinite(v)&&v>0);
+  const validTgt=SaTgt.map(v=>isFinite(v)&&v>0);  // ~isnan & >0
   const n=S.records.length;
-  // Pre-interpolate all records once
+
+  // A[:,i] = interp1(r.T, r.Sa, commonT, NaN) / n  — exactly like MATLAB
   const SaInterp=S.records.map(r=>interp1(r.T,r.Sa,commonT));
-  const AvT_mat=commonT.map((_,k)=>SaInterp.map(sa=>isFinite(sa[k])&&sa[k]>0?sa[k]/n:0));
-  const validRows=commonT.map((_,k)=>validTgt[k]&&AvT_mat[k].every(v=>v>0));
+  const A=commonT.map((_,k)=>SaInterp.map(sa=>isFinite(sa[k])?sa[k]/n:NaN));
+
+  // validRows = validTgt & all(~isnan(A), 2)  — exactly like MATLAB
+  const validRows=commonT.map((_,k)=>validTgt[k]&&A[k].every(v=>isFinite(v)));
   const idxV=validRows.map((v,i)=>v?i:-1).filter(i=>i>=0);
-  const Av=idxV.map(i=>AvT_mat[i]);
+  const Av=idxV.map(i=>A[i]);         // |valid|×n  (NaN-free rows)
   const tv=idxV.map(i=>SaTgt[i]);
   const P=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>(i===j?1:0)-1/n));
-  return {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp};
+  return {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp,idxV};
 }
 
 function solveReg(alpha,Av,tv,P,n,sfmin,sfmax){
+  let SF;
+  if(alpha===0){
+    // lsqnonneg: active-set NNLS matching MATLAB
+    SF=nnls(Av,tv,n);
+  } else {
+    const AvT=transpose(Av);
+    const AtA=matMul(AvT,Av);
+    const rhs=matVec(AvT,tv);
+    const M=AtA.map((row,i)=>row.map((v,j)=>v+alpha*P[i][j]));
+    SF=linSolve(M,rhs);
+  }
+  return SF.map(s=>Math.min(Math.max(isFinite(s)?Math.max(s,0):0, sfmin), sfmax));
+}
+
+// Non-negative least squares (Lawson-Hanson active-set, matches MATLAB lsqnonneg)
+function nnls(Av,tv,n){
   const AvT=transpose(Av);
-  const AtA=matMul(AvT,Av);
-  const rhs=matVec(AvT,tv);
-  const M=alpha===0?AtA:AtA.map((row,i)=>row.map((v,j)=>v+alpha*P[i][j]));
-  let SF=linSolve(M,rhs);
-  return SF.map(s=>Math.min(Math.max(Math.max(s,0),sfmin),sfmax));
+  let x=new Array(n).fill(0);
+  let P_set=new Array(n).fill(false); // passive (zero) set
+  const MAX=3*n+3;
+  for(let outer=0;outer<MAX;outer++){
+    // w = A'*(tv - A*x)
+    const Ax=Av.map(row=>dot(row,x));
+    const res=tv.map((t,i)=>t-Ax[i]);
+    const w=matVec(AvT,res);
+    // Find max w[i] for i in Z (passive set, x[i]==0)
+    let maxW=-Infinity,t=-1;
+    for(let i=0;i<n;i++) if(!P_set[i]&&w[i]>maxW){maxW=w[i];t=i;}
+    if(t===-1||maxW<=1e-12)break;
+    P_set[t]=true;
+    // Inner loop
+    for(let inner=0;inner<MAX;inner++){
+      const pidx=P_set.map((p,i)=>p?i:-1).filter(i=>i>=0);
+      const As=Av.map(row=>pidx.map(i=>row[i]));
+      const AsT=transpose(As);
+      const AtAs=matMul(AsT,As);
+      const rhs=matVec(AsT,tv);
+      const s_p=linSolve(AtAs,rhs);
+      const s=new Array(n).fill(0);
+      pidx.forEach((i,j)=>s[i]=s_p[j]);
+      if(pidx.every(i=>s[i]>0)){x=s;break;}
+      // alpha step
+      let alpha_step=Infinity;
+      pidx.forEach(i=>{if(s[i]<=0){const a=x[i]/(x[i]-s[i]);if(a<alpha_step)alpha_step=a;}});
+      x=x.map((xi,i)=>xi+alpha_step*(s[i]-xi));
+      pidx.forEach(i=>{if(x[i]<=1e-12){x[i]=0;P_set[i]=false;}});
+    }
+  }
+  return x;
 }
 
 function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInterp){
+  // Exactly matches MATLAB applyPhase2:
+  // sumSa += interp1(r.T, r.Sa*SF(i), commonT, NaN) → NaN propagates
   let SF=[...SFin];
   const n=SF.length;
   for(let it=0;it<10;it++){
-    // If ANY record has NaN at a period → mean is NaN (matches MATLAB)
-    const mean_Sa=commonT.map((_,k)=>{
+    const meanSa=commonT.map((_,k)=>{
       let s=0;
       for(let i=0;i<n;i++){
-        if(!isFinite(SaInterp[i][k])) return NaN;
-        s+=SaInterp[i][k]*SF[i];
+        const v=SaInterp[i][k];
+        if(!isFinite(v)) return NaN;
+        s+=v*SF[i];
       }
       return s/n;
     });
-    const v=commonT.map((_,k)=>validTgt[k]&&isFinite(mean_Sa[k])&&mean_Sa[k]>0);
-    const mv=mean_Sa.filter((_,k)=>v[k]);
-    const tv2=SaTgt.filter((_,k)=>v[k]);
+    // v = validTgt & ~isnan(meanSa) & meanSa > 0
+    const mv=[], tv2=[];
+    commonT.forEach((_,k)=>{
+      if(validTgt[k]&&isFinite(meanSa[k])&&meanSa[k]>0){mv.push(meanSa[k]);tv2.push(SaTgt[k]);}
+    });
     if(!mv.length)break;
     const lmin=Math.max(...mv.map((m,i)=>thresh*1.001*tv2[i]/m));
     const lopt=dot(mv,tv2)/dot(mv,mv);
@@ -626,21 +677,24 @@ function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInte
 }
 
 function computeR2(SFin,commonT,SaTgt,validTgt,SaInterp){
+  // Exactly matches MATLAB computeR2:
+  // sumSa += interp1(r.T, r.Sa*SF(i), commonT, NaN)  → NaN propagates
   const n=SFin.length;
-  // If ANY record has NaN at a period → mean is NaN (matches MATLAB)
-  const ms=commonT.map((_,k)=>{
+  const meanSa=commonT.map((_,k)=>{
     let s=0;
     for(let i=0;i<n;i++){
-      if(!isFinite(SaInterp[i][k])) return NaN;
-      s+=SaInterp[i][k]*SFin[i];
+      const v=SaInterp[i][k];
+      if(!isFinite(v)) return NaN;   // NaN propagates like MATLAB sum
+      s+=v*SFin[i];
     }
     return s/n;
   });
-  const idx=validTgt.map((b,i)=>b&&isFinite(ms[i])&&ms[i]>0?i:-1).filter(i=>i>=0);
-  const avv=idx.map(i=>ms[i]), tvv=idx.map(i=>SaTgt[i]);
-  if(avv.length<2)return -Infinity;
-  const mt=mean(tvv);
-  return 1-avv.reduce((s,v,i)=>s+(v-tvv[i])**2,0)/tvv.reduce((s,v)=>s+(v-mt)**2,0);
+  // v = validTgt & ~isnan(meanSa) & meanSa > 0
+  const idx=validTgt.map((b,i)=>b&&isFinite(meanSa[i])&&meanSa[i]>0?i:-1).filter(i=>i>=0);
+  if(idx.length<2) return -Infinity;
+  const av=idx.map(i=>meanSa[i]), tv=idx.map(i=>SaTgt[i]);
+  const mt=mean(tv);
+  return 1-av.reduce((s,v,i)=>s+(v-tv[i])**2,0)/tv.reduce((s,v)=>s+(v-mt)**2,0);
 }
 
 function getThresh(){
