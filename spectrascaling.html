@@ -600,16 +600,16 @@ function solveReg(alpha,Av,tv,P,n,sfmin,sfmax){
   return SF.map(s=>Math.min(Math.max(Math.max(s,0),sfmin),sfmax));
 }
 
-function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh){
+function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInterp){
   let SF=[...SFin];
+  const n=SF.length;
   for(let it=0;it<10;it++){
     const mean_Sa=commonT.map((_,k)=>{
-      let s=0;S.records.forEach((r,i)=>{const v=interp1(r.T,r.Sa,[commonT[k]])[0]*SF[i];s+=isFinite(v)?v:0;});
-      return s/S.records.length;
+      let s=0; SaInterp.forEach((sa,i)=>{s+=isFinite(sa[k])?sa[k]*SF[i]:0;}); return s/n;
     });
     const v=commonT.map((_,k)=>validTgt[k]&&isFinite(mean_Sa[k])&&mean_Sa[k]>0);
-    const mv=commonT.map((_,k)=>v[k]?mean_Sa[k]:null).filter(x=>x!==null);
-    const tv2=commonT.map((_,k)=>v[k]?SaTgt[k]:null).filter(x=>x!==null);
+    const mv=mean_Sa.filter((_,k)=>v[k]);
+    const tv2=SaTgt.filter((_,k)=>v[k]);
     if(!mv.length)break;
     const lmin=Math.max(...mv.map((m,i)=>thresh*1.001*tv2[i]/m));
     const lopt=dot(mv,tv2)/dot(mv,mv);
@@ -620,15 +620,10 @@ function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh){
   return SF;
 }
 
-function computeR2(SFin,commonT,SaTgt,validTgt){
-  const n=S.records.length;
+function computeR2(SFin,commonT,SaTgt,validTgt,SaInterp){
+  const n=SFin.length;
   const ms=commonT.map((_,k)=>{
-    let s=0;
-    S.records.forEach((r,i)=>{
-      const v=interp1(r.T,r.Sa,[commonT[k]])[0]*SFin[i];
-      s+=isFinite(v)?v:0;
-    });
-    return s/n;
+    let s=0; SaInterp.forEach((sa,i)=>{s+=isFinite(sa[k])?sa[k]*SFin[i]:0;}); return s/n;
   });
   const idx=validTgt.map((b,i)=>b&&isFinite(ms[i])&&ms[i]>0?i:-1).filter(i=>i>=0);
   const avv=idx.map(i=>ms[i]), tvv=idx.map(i=>SaTgt[i]);
@@ -651,10 +646,10 @@ function runScaling(alpha){
   if(S.T1<=0){alert('Enter building period T₁ first.');return null;}
   const {sfmin,sfmax}=getSFbounds();
   const thresh=getThresh();
-  const {commonT,SaTgt,validTgt,Av,tv,P,n}=buildMat();
+  const {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp}=buildMat();
   let SF=solveReg(alpha,Av,tv,P,n,sfmin,sfmax);
-  SF=applyPhase2(SF,commonT,SaTgt,validTgt,S.standard==='EC8',sfmin,sfmax,thresh);
-  return {SF,commonT,SaTgt,validTgt};
+  SF=applyPhase2(SF,commonT,SaTgt,validTgt,S.standard==='EC8',sfmin,sfmax,thresh,SaInterp);
+  return {SF,commonT,SaTgt,validTgt,SaInterp};
 }
 
 function autoScale(){
@@ -664,13 +659,13 @@ function autoScale(){
     const {sfmin,sfmax}=getSFbounds();
     const thresh=getThresh();
     const isEC8=S.standard==='EC8';
-    const {commonT,SaTgt,validTgt,Av,tv,P,n}=buildMat();
+    const {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp}=buildMat();
     const cands=[0,0.05,0.1,0.2,0.5,1,2,5,10,20,50];
     let bestR2=-Infinity,bestA=0,bestSF=null;
     for(const a of cands){
       let SF=solveReg(a,Av,tv,P,n,sfmin,sfmax);
-      SF=applyPhase2(SF,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh);
-      const r2=computeR2(SF,commonT,SaTgt,validTgt);
+      SF=applyPhase2(SF,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInterp);
+      const r2=computeR2(SF,commonT,SaTgt,validTgt,SaInterp);
       if(r2>bestR2){bestR2=r2;bestA=a;bestSF=SF;}
     }
     document.getElementById('alpha').value=bestA;
@@ -685,9 +680,9 @@ function autoScale(){
 function applyAlpha(){
   const alpha=parseFloat(document.getElementById('alpha').value)||0;
   const res=runScaling(alpha); if(!res)return;
-  const {SF,commonT,SaTgt,validTgt}=res;
+  const {SF,commonT,SaTgt,validTgt,SaInterp}=res;
   SF.forEach((sf,i)=>S.records[i].SF=sf);
-  const r2=computeR2(SF,commonT,SaTgt,validTgt);
+  const r2=computeR2(SF,commonT,SaTgt,validTgt,SaInterp);
   const cv=std(SF)/mean(SF);
   document.getElementById('auto-info').textContent=
     `✔ α=${alpha} applied.  R²=${r2.toFixed(4)}  CV=${cv.toFixed(3)}  SF=[${Math.min(...SF).toFixed(3)} – ${Math.max(...SF).toFixed(3)}]`;
