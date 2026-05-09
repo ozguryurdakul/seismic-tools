@@ -805,8 +805,8 @@ function redraw(){
     ].forEach(mk=>{
       shapes.push({type:'line',x0:mk.x,x1:mk.x,y0:0,y1:1,yref:'paper',
         line:{color:'#1a4faa',width:1.4,dash:mk.dash}});
-      anns.push({x:mk.x,y:0.02,yref:'paper',text:mk.lbl,textangle:-90,
-        font:{size:10,color:'#1a4faa'},showarrow:false,xanchor:'left'});
+      anns.push({x:mk.x,y:0.98,yref:'paper',text:mk.lbl,textangle:-90,
+        font:{size:10,color:'#1a4faa'},showarrow:false,xanchor:'right',yanchor:'top'});
     });
   }
 
