@@ -112,7 +112,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
 <div id="panel">
   <div id="hdr">
     <h1>⚡ Response Spectrum Scaling</h1>
-    <p>SpectraScalingGUI v1.3.4 · University of Pardubice</p>
+    <p>SpectraScalingGUI v1.3.5 · University of Pardubice</p>
   </div>
 
   <div id="std-bar">
@@ -808,14 +808,21 @@ function checkCompliance(){
 // ══════════════════════════════════════════════════════════════════════
 function applyAxis(){
   S.axLimits={
-    xmin:+document.getElementById('xmin').value||0,
-    xmax:+document.getElementById('xmax').value||4,
-    ymin:+document.getElementById('ymin').value||0,
-    ymax:+document.getElementById('ymax').value||3,
+    xmin:parseFloat(document.getElementById('xmin').value)||0,
+    xmax:parseFloat(document.getElementById('xmax').value)||4,
+    ymin:parseFloat(document.getElementById('ymin').value)||0,
+    ymax:parseFloat(document.getElementById('ymax').value)||3,
   };
   redraw();
 }
-function resetAxis(){S.axLimits=null;redraw();}
+function resetAxis(){
+  S.axLimits=null;
+  document.getElementById('xmin').value=0;
+  document.getElementById('xmax').value=4;
+  document.getElementById('ymin').value=0;
+  document.getElementById('ymax').value=3;
+  redraw();
+}
 
 // ══════════════════════════════════════════════════════════════════════
 //  EXPORT CSV
@@ -870,8 +877,8 @@ function redraw(){
     ].forEach(mk=>{
       shapes.push({type:'line',x0:mk.x,x1:mk.x,y0:0,y1:1,yref:'paper',
         line:{color:'#1a4faa',width:1.4,dash:mk.dash}});
-      anns.push({x:mk.x,y:0.98,yref:'paper',text:mk.lbl,textangle:-90,
-        font:{size:10,color:'#1a4faa'},showarrow:false,xanchor:'right',yanchor:'top'});
+      anns.push({x:mk.x,y:0.02,yref:'paper',text:mk.lbl,textangle:-90,
+        font:{size:10,color:'#1a4faa'},showarrow:false,xanchor:'left',yanchor:'bottom'});
     });
   }
 
@@ -897,6 +904,7 @@ function redraw(){
 //  INIT
 // ══════════════════════════════════════════════════════════════════════
 onStandardChange();
+applyAxis();
 redraw();
 </script>
 </body>
