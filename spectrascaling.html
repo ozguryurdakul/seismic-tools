@@ -112,7 +112,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
 <div id="panel">
   <div id="hdr">
     <h1>⚡ Response Spectrum Scaling</h1>
-    <p>SpectraScalingGUI v1.3.3 · University of Pardubice</p>
+    <p>SpectraScalingGUI v1.3.4 · University of Pardubice</p>
   </div>
 
   <div id="std-bar">
@@ -146,7 +146,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
       <div class="sep">Building Period</div>
       <div class="row">
         <span class="lbl bold">T₁ (s) — required</span>
-        <input type="text" inputmode="decimal" id="T1" class="w70" value="0" onchange="onT1Change()" oninput="onT1Change()">
+        <input type="number" id="T1" class="w70" value="0" min="0" step="0.1" onchange="onT1Change()" oninput="onT1Change()">
       </div>
       <div id="T1-info" class="info warn">⚠ Enter building period to show period markers.</div>
 
@@ -160,15 +160,15 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
       <div class="sep">Plot Axis Limits</div>
       <div class="row">
         <span class="lbl" style="width:58px;">X min (s)</span>
-        <input type="text" inputmode="decimal" id="xmin" class="w50" value="0" min="0">
+        <input type="number" id="xmin" class="w50" value="0" min="0" step="0.1" oninput="applyAxis()" onchange="applyAxis()">
         <span class="lbl" style="width:58px;">X max (s)</span>
-        <input type="text" inputmode="decimal" id="xmax" class="w50" value="4" min="0">
+        <input type="number" id="xmax" class="w50" value="4" min="0" step="0.1" oninput="applyAxis()" onchange="applyAxis()">
       </div>
       <div class="row">
         <span class="lbl" style="width:58px;">Y min (g)</span>
-        <input type="text" inputmode="decimal" id="ymin" class="w50" value="0" min="0">
+        <input type="number" id="ymin" class="w50" value="0" min="0" step="0.1" oninput="applyAxis()" onchange="applyAxis()">
         <span class="lbl" style="width:58px;">Y max (g)</span>
-        <input type="text" inputmode="decimal" id="ymax" class="w50" value="3" min="0">
+        <input type="number" id="ymax" class="w50" value="3" min="0" step="0.1" oninput="applyAxis()" onchange="applyAxis()">
       </div>
       <div class="row">
         <button class="btn btn-blue btn-inline" onclick="applyAxis()">Apply Limits</button>
