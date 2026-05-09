@@ -112,7 +112,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
 <div id="panel">
   <div id="hdr">
     <h1>⚡ Response Spectrum Scaling</h1>
-    <p>SpectraScalingGUI v1.3 · University of Pardubice</p>
+    <p>SpectraScalingGUI v1.3.1 · University of Pardubice</p>
   </div>
 
   <div id="std-bar">
@@ -146,7 +146,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
       <div class="sep">Building Period</div>
       <div class="row">
         <span class="lbl bold">T₁ (s) — required</span>
-        <input type="text" id="T1" inputmode="decimal" class="w70" value="0" min="0" step="0.1" onchange="onT1Change()" oninput="onT1Change()">
+        <input type="text" inputmode="decimal" id="T1" class="w70" value="0" onchange="onT1Change()" oninput="onT1Change()">
       </div>
       <div id="T1-info" class="info warn">⚠ Enter building period to show period markers.</div>
 
@@ -160,15 +160,15 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
       <div class="sep">Plot Axis Limits</div>
       <div class="row">
         <span class="lbl" style="width:58px;">X min (s)</span>
-        <input type="text" id="xmin" inputmode="decimal" class="w50" value="0" min="0">
+        <input type="text" inputmode="decimal" id="xmin" class="w50" value="0" min="0">
         <span class="lbl" style="width:58px;">X max (s)</span>
-        <input type="text" id="xmax" inputmode="decimal" class="w50" value="4" min="0">
+        <input type="text" inputmode="decimal" id="xmax" class="w50" value="4" min="0">
       </div>
       <div class="row">
         <span class="lbl" style="width:58px;">Y min (g)</span>
-        <input type="text" id="ymin" inputmode="decimal" class="w50" value="0" min="0">
+        <input type="text" inputmode="decimal" id="ymin" class="w50" value="0" min="0">
         <span class="lbl" style="width:58px;">Y max (g)</span>
-        <input type="text" id="ymax" inputmode="decimal" class="w50" value="3" min="0">
+        <input type="text" inputmode="decimal" id="ymax" class="w50" value="3" min="0">
       </div>
       <div class="row">
         <button class="btn btn-blue btn-inline" onclick="applyAxis()">Apply Limits</button>
@@ -179,8 +179,8 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
       <div style="font-size:11px;color:#444;line-height:1.6;margin-bottom:6px;">
         Download sample target spectrum and ground motion records to test the tool.
       </div>
-      <a href="https://github.com/ozguryurdakul/seismic-tools/raw/refs/heads/main/example_data.zip"
-         target="_blank" style="text-decoration:none;">
+      <a href="https://raw.githubusercontent.com/ozguryurdakul/seismic-tools/main/example_data/sample_response_spectrum_data.zip"
+         download style="text-decoration:none;">
         <button class="btn btn-green" style="margin-bottom:8px;">📥  Download Sample Data (ZIP)</button>
       </a>
 
@@ -538,7 +538,7 @@ function std(a){const m=mean(a);return Math.sqrt(a.reduce((s,v)=>s+(v-m)**2,0)/a
 
 function interp1(x,y,xi){
   return xi.map(q=>{
-    if(q<x[0]||q>x[x.length-1]) return NaN;  // out of range → NaN, matches MATLAB
+    if(q<x[0]||q>x[x.length-1]) return NaN;
     if(q===x[0]) return y[0];
     if(q===x[x.length-1]) return y[y.length-1];
     let lo=0,hi=x.length-1;
@@ -574,16 +574,14 @@ function getWindow(){
 }
 
 function buildMat(){
-  const {T1,T2,isEC8}=getWindow();
+  const {T1,T2}=getWindow();
   const commonT=linspace(T1,T2,300);
   const SaTgt=interp1(S.target.T,S.target.Sa,commonT);
   const validTgt=SaTgt.map(v=>isFinite(v)&&v>0);
   const n=S.records.length;
-
-  // Pre-interpolate ALL records at commonT once — reused by sweep
+  // Pre-interpolate all records once
   const SaInterp=S.records.map(r=>interp1(r.T,r.Sa,commonT));
-
-  const AvT_mat=commonT.map((_,k)=>SaInterp.map(sa=>isFinite(sa[k])?sa[k]/n:0));
+  const AvT_mat=commonT.map((_,k)=>SaInterp.map(sa=>isFinite(sa[k])&&sa[k]>0?sa[k]/n:0));
   const validRows=commonT.map((_,k)=>validTgt[k]&&AvT_mat[k].every(v=>v>0));
   const idxV=validRows.map((v,i)=>v?i:-1).filter(i=>i>=0);
   const Av=idxV.map(i=>AvT_mat[i]);
@@ -606,7 +604,7 @@ function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInte
   const n=SF.length;
   for(let it=0;it<10;it++){
     const mean_Sa=commonT.map((_,k)=>{
-      let s=0; SaInterp.forEach((sa,i)=>{s+=isFinite(sa[k])?sa[k]*SF[i]:0;}); return s/n;
+      let s=0; SaInterp.forEach((sa,i)=>{if(isFinite(sa[k]))s+=sa[k]*SF[i];}); return s/n;
     });
     const v=commonT.map((_,k)=>validTgt[k]&&isFinite(mean_Sa[k])&&mean_Sa[k]>0);
     const mv=mean_Sa.filter((_,k)=>v[k]);
@@ -624,7 +622,7 @@ function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInte
 function computeR2(SFin,commonT,SaTgt,validTgt,SaInterp){
   const n=SFin.length;
   const ms=commonT.map((_,k)=>{
-    let s=0; SaInterp.forEach((sa,i)=>{s+=isFinite(sa[k])?sa[k]*SFin[i]:0;}); return s/n;
+    let s=0; SaInterp.forEach((sa,i)=>{if(isFinite(sa[k]))s+=sa[k]*SFin[i];}); return s/n;
   });
   const idx=validTgt.map((b,i)=>b&&isFinite(ms[i])&&ms[i]>0?i:-1).filter(i=>i>=0);
   const avv=idx.map(i=>ms[i]), tvv=idx.map(i=>SaTgt[i]);
@@ -744,10 +742,10 @@ function checkCompliance(){
 // ══════════════════════════════════════════════════════════════════════
 function applyAxis(){
   S.axLimits={
-    xmin:parseFloat(document.getElementById('xmin').value)||0,
-    xmax:parseFloat(document.getElementById('xmax').value)||4,
-    ymin:parseFloat(document.getElementById('ymin').value)||0,
-    ymax:parseFloat(document.getElementById('ymax').value)||3,
+    xmin:+document.getElementById('xmin').value||0,
+    xmax:+document.getElementById('xmax').value||4,
+    ymin:+document.getElementById('ymin').value||0,
+    ymax:+document.getElementById('ymax').value||3,
   };
   redraw();
 }
