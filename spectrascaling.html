@@ -112,7 +112,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
 <div id="panel">
   <div id="hdr">
     <h1>⚡ Response Spectrum Scaling</h1>
-    <p>SpectraScalingGUI v1.3.1 · University of Pardubice</p>
+    <p>SpectraScalingGUI v1.3.2 · University of Pardubice</p>
   </div>
 
   <div id="std-bar">
@@ -603,8 +603,14 @@ function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInte
   let SF=[...SFin];
   const n=SF.length;
   for(let it=0;it<10;it++){
+    // If ANY record has NaN at a period → mean is NaN (matches MATLAB)
     const mean_Sa=commonT.map((_,k)=>{
-      let s=0; SaInterp.forEach((sa,i)=>{if(isFinite(sa[k]))s+=sa[k]*SF[i];}); return s/n;
+      let s=0;
+      for(let i=0;i<n;i++){
+        if(!isFinite(SaInterp[i][k])) return NaN;
+        s+=SaInterp[i][k]*SF[i];
+      }
+      return s/n;
     });
     const v=commonT.map((_,k)=>validTgt[k]&&isFinite(mean_Sa[k])&&mean_Sa[k]>0);
     const mv=mean_Sa.filter((_,k)=>v[k]);
@@ -621,8 +627,14 @@ function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInte
 
 function computeR2(SFin,commonT,SaTgt,validTgt,SaInterp){
   const n=SFin.length;
+  // If ANY record has NaN at a period → mean is NaN (matches MATLAB)
   const ms=commonT.map((_,k)=>{
-    let s=0; SaInterp.forEach((sa,i)=>{if(isFinite(sa[k]))s+=sa[k]*SFin[i];}); return s/n;
+    let s=0;
+    for(let i=0;i<n;i++){
+      if(!isFinite(SaInterp[i][k])) return NaN;
+      s+=SaInterp[i][k]*SFin[i];
+    }
+    return s/n;
   });
   const idx=validTgt.map((b,i)=>b&&isFinite(ms[i])&&ms[i]>0?i:-1).filter(i=>i>=0);
   const avv=idx.map(i=>ms[i]), tvv=idx.map(i=>SaTgt[i]);
