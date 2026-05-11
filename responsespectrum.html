@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Response Spectrum Calculator | University of Pardubice</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0f2244;--blue:#1a4faa;--blue2:#1e6dc0;--violet:#5b2d8e;
+  --green:#1a7a36;--red:#b81c1c;--gray:#6b7280;--light:#f4f6fb;
+  --border:#d1d9e6;--text:#1a1f2e;--sep-bg:#eceef6;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'IBM Plex Sans',sans-serif;font-size:13px;color:var(--text);background:#e8ecf3;display:flex;height:100vh;overflow:hidden;}
+#panel{width:400px;min-width:400px;background:white;display:flex;flex-direction:column;height:100vh;border-right:2px solid var(--border);box-shadow:4px 0 20px rgba(0,0,0,.08);}
+#hdr{background:linear-gradient(135deg,var(--navy) 0%,var(--blue) 100%);color:white;padding:12px 16px;flex-shrink:0;}
+#hdr h1{font-size:15px;font-weight:600;}
+#hdr p{font-size:10px;opacity:.75;margin-top:2px;}
+.tab-bar{display:flex;border-bottom:2px solid var(--border);flex-shrink:0;background:var(--light);}
+.tab-btn{flex:1;padding:9px 4px;border:none;background:transparent;font-family:inherit;font-size:12px;font-weight:500;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);background:white;}
+.tab-btn:hover:not(.active){color:var(--text);background:#eef0f8;}
+.tab-content{flex:1;overflow-y:auto;padding:12px;}
+.tab-pane{display:none;}.tab-pane.active{display:block;}
+.sep{background:var(--sep-bg);color:#444;font-size:11px;font-style:italic;padding:3px 8px;border-radius:3px;margin:10px 0 5px;font-weight:500;}
+.sep:first-child{margin-top:0;}
+.row{display:flex;align-items:center;gap:6px;margin-bottom:5px;}
+.lbl{font-size:12px;color:#555;}
+.lbl.bold{font-weight:600;color:var(--text);}
+input[type=number],input[type=text],select.sm{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:white;color:var(--text);}
+input[type=number]:focus,select.sm:focus{outline:none;border-color:var(--blue);}
+.w50{width:54px;}.w70{width:68px;}.w90{width:90px;}.w120{width:120px;}
+.info{font-size:11px;margin-bottom:4px;}
+.ok{color:var(--green);}.warn{color:#7a4a00;}.err{color:var(--red);}
+button.btn{display:block;width:100%;padding:7px 10px;border:none;border-radius:5px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:4px;transition:filter .15s;}
+button.btn:hover{filter:brightness(1.1);}
+.btn-blue{background:var(--blue);color:white;}
+.btn-violet{background:var(--violet);color:white;}
+.btn-green{background:var(--green);color:white;}
+.btn-red{background:var(--red);color:white;}
+.btn-gray{background:#888;color:white;}
+.btn-outline{background:white;color:var(--gray);border:1px solid var(--border)!important;}
+.btn-inline{padding:5px 10px;width:auto;display:inline-block;}
+.tbl-wrap{height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:5px;margin-bottom:6px;}
+table{width:100%;border-collapse:collapse;}
+th{background:var(--light);font-size:11px;font-weight:600;padding:4px 5px;text-align:left;position:sticky;top:0;border-bottom:1px solid var(--border);}
+td{font-size:11px;padding:3px 5px;border-bottom:1px solid #f0f2f8;}
+tr:hover td{background:#f5f7fc;}
+.sel-row{background:#e8f0ff!important;}
+#footer{font-size:10px;color:#aaa;padding:6px 12px;border-top:1px solid var(--border);background:var(--light);flex-shrink:0;text-align:center;}
+#plot-panel{flex:1;display:flex;flex-direction:column;background:#f0f3f8;overflow:hidden;}
+.plot-div{flex:1;min-height:0;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:white;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.3);width:520px;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;}
+.modal-hdr{background:var(--navy);color:white;padding:11px 16px;font-weight:600;font-size:13px;display:flex;justify-content:space-between;}
+.modal-hdr button{background:none;border:none;color:white;font-size:18px;cursor:pointer;}
+.modal-body{padding:14px;overflow-y:auto;flex:1;}
+.modal-foot{padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;}
+.prev-wrap{max-height:120px;overflow:auto;border:1px solid var(--border);border-radius:4px;margin-bottom:10px;}
+.prev-wrap table th,.prev-wrap table td{white-space:nowrap;font-size:11px;padding:2px 6px;}
+.field-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.field-row label{font-size:12px;font-weight:600;min-width:110px;}
+select.modal-sel{font-family:inherit;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:4px 6px;background:white;}
+input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:4px 6px;width:100px;}
+.badge{display:inline-block;font-size:10px;border-radius:3px;padding:1px 5px;font-weight:600;margin-left:4px;}
+.badge-ew{background:#dde8ff;color:#1a4faa;}
+.badge-ns{background:#ffdde0;color:#8b0000;}
+.badge-ud{background:#ddf5e8;color:#1a6a30;}
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <div id="hdr">
+    <h1>⚡ Response Spectrum Calculator</h1>
+    <p>ResponseSpectrumGUI v1.1 · University of Pardubice · TA CR – SIGMA</p>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab(0,this)">Files</button>
+    <button class="tab-btn" onclick="switchTab(1,this)">Settings</button>
+  </div>
+
+  <div class="tab-content">
+
+    <!-- TAB 1: Files -->
+    <div class="tab-pane active" id="t1">
+      <div style="background:#eef2fb;border:1px solid #c8d4ef;border-radius:5px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#2a3a6a;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:16px;">🇨🇿</span>
+        <span><strong>TA CR – SIGMA / M.ERA-NET Cofund</strong><br>Technology Agency of the Czech Republic</span>
+      </div>
+      <div class="sep">Ground Motion Records</div>
+      <div class="info" style="color:#777;font-style:italic;margin-bottom:6px;">
+        CSV or text files — headers auto-skipped. Set dt, units and component per file.
+      </div>
+      <button class="btn btn-green" onclick="addFiles()">➕  Add File(s)…</button>
+      <input type="file" id="file-inp" accept=".csv,.txt,.asc,.dat,.AT2" multiple style="display:none" onchange="onFiles()">
+      <button class="btn btn-red" onclick="removeSelected()">✖  Remove Selected</button>
+
+      <div class="tbl-wrap" style="height:110px;">
+        <table id="file-tbl">
+          <thead><tr>
+            <th style="width:22px;"><input type="checkbox" id="sel-all" onchange="toggleAll()"></th>
+            <th>File</th>
+            <th style="width:55px;">dt (s)</th>
+            <th style="width:45px;">Units</th>
+            <th style="width:38px;">Comp</th>
+          </tr></thead>
+          <tbody id="file-body"></tbody>
+        </table>
+      </div>
+      <div id="file-status" class="info warn">No files loaded.</div>
+
+      <div class="sep">Computation Mode</div>
+      <div class="row">
+        <span class="lbl bold" style="min-width:80px;">Mode:</span>
+        <select id="mode-sel" class="sm" style="width:100%;" onchange="onModeChange()">
+          <option value="1D">1D — single component</option>
+          <option value="2D">2D — geometric mean (EW + NS)</option>
+        </select>
+      </div>
+      <div id="mode-info" class="info ok" style="font-size:11px;margin-top:2px;">
+        Select one file (1D) or check EW + NS pair (2D).
+      </div>
+
+      <div class="sep" style="margin-top:10px;"></div>
+      <button class="btn btn-violet" onclick="compute()" id="btn-compute">⚡  Compute Response Spectra</button>
+      <button class="btn btn-gray" onclick="clearPlots()">✖  Clear Plots</button>
+      <div id="comp-status" class="info" style="margin-top:4px;font-size:11px;"></div>
+
+      <div class="sep">Acknowledgement</div>
+      <div style="font-size:11px;color:#444;line-height:1.6;margin-bottom:6px;">
+        This tool was developed within the framework of a project co-financed from the state budget by the
+        <strong>Technology Agency of the Czech Republic</strong> under the
+        <strong>SIGMA Programme</strong> within the <strong>M.ERA-NET Cofund</strong>.
+      </div>
+
+      <div class="sep">Citation</div>
+      <div style="font-size:11px;color:#444;line-height:1.6;font-style:italic;margin-bottom:4px;">
+        Yurdakul, Özgür (2026). <em>ResponseSpectrumGUI: A web-based earthquake response spectrum calculator.</em>
+        Faculty of Transport Engineering, University of Pardubice. Available at:
+        <a href="https://ozguryurdakul.github.io/seismic-tools/responsespectrum.html"
+           style="color:var(--blue);word-break:break-all;" target="_blank">
+           https://ozguryurdakul.github.io/seismic-tools/responsespectrum.html</a>
+      </div>
+    </div>
+
+    <!-- TAB 2: Settings -->
+    <div class="tab-pane" id="t2">
+      <div class="sep">Integration Method</div>
+      <select id="method-sel" class="sm" style="width:100%;margin-bottom:6px;">
+        <option value="nm">Newmark-β (Avg. Acceleration)</option>
+        <option value="nj">Nigam-Jennings (Exact)</option>
+        <option value="dh">Duhamel's Integral</option>
+        <option value="all">All 3 Methods (Overlay)</option>
+      </select>
+
+      <div class="sep">Damping Ratio</div>
+      <div class="row">
+        <span class="lbl bold">ξ (damping):</span>
+        <input type="number" id="xi" class="w70" value="0.05" min="0" max="0.99" step="0.01">
+        <span class="lbl">(e.g. 0.05 = 5%)</span>
+      </div>
+
+      <div class="sep">Period Range</div>
+      <div class="row">
+        <span class="lbl bold" style="min-width:65px;">T min (s):</span>
+        <input type="number" id="Tmin" class="w70" value="0.02" min="0.001" step="0.01">
+      </div>
+      <div class="row">
+        <span class="lbl bold" style="min-width:65px;">T max (s):</span>
+        <input type="number" id="Tmax" class="w70" value="4.0" min="0.1" step="0.1">
+      </div>
+      <div class="row">
+        <span class="lbl bold" style="min-width:65px;">N periods:</span>
+        <input type="number" id="NT" class="w70" value="200" min="10" max="1000" step="10">
+      </div>
+
+      <div class="sep">Plot Axis Limits</div>
+      <div class="row">
+        <span class="lbl" style="width:65px;">X min (s)</span>
+        <input type="number" id="xmin" class="w50" value="0" min="0">
+        <span class="lbl" style="width:65px;">X max (s)</span>
+        <input type="number" id="xmax" class="w50" value="4" min="0">
+      </div>
+      <div class="row">
+        <button class="btn btn-blue btn-inline" onclick="applyAxis()">Apply Limits</button>
+        <button class="btn btn-outline btn-inline" onclick="resetAxis()">Reset to Auto</button>
+      </div>
+
+      <div class="sep">Export</div>
+      <button class="btn btn-outline" onclick="exportCSV()">📋  Export Results (CSV)…</button>
+    </div>
+
+  </div>
+  <div id="footer">Özgür Yurdakul · University of Pardubice · CC BY-NC-SA 4.0</div>
+</div>
+
+<!-- Right: 3 plots -->
+<div id="plot-panel">
+  <div class="plot-div" id="plt-sa"></div>
+  <div class="plot-div" id="plt-sv"></div>
+  <div class="plot-div" id="plt-sd"></div>
+</div>
+
+<!-- File settings modal -->
+<div class="modal-overlay" id="file-modal">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <span id="modal-fname">File Settings</span>
+      <button onclick="cancelModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="prev-wrap"><table id="prev-tbl"></table></div>
+      <div class="field-row">
+        <label>Time step dt (s) *</label>
+        <input type="number" class="modal-inp" id="m-dt" value="0.005" min="0.0001" step="0.001">
+        <span style="font-size:10px;color:#888;">required</span>
+      </div>
+      <div class="field-row">
+        <label>Acceleration units</label>
+        <select class="modal-sel" id="m-units">
+          <option value="cm/s2">cm/s²</option>
+          <option value="m/s2">m/s²</option>
+          <option value="g">g</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label>Component</label>
+        <select class="modal-sel" id="m-comp">
+          <option value="EW">E-W</option>
+          <option value="NS">N-S</option>
+          <option value="UD">U-D</option>
+        </select>
+      </div>
+      <div class="field-row" id="col-row" style="display:none;">
+        <label>Data column</label>
+        <select class="modal-sel" id="m-col"></select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-blue btn-inline" onclick="confirmModal()">OK</button>
+      <button class="btn btn-outline btn-inline" onclick="cancelModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════════════════
+const S = {
+  files: [],    // [{name, ag:[], dt, units, comp, ncols, col}]
+  results: null,
+  axLimits: null,
+};
+
+// ══════════════════════════════════════════════════════════════════════
+//  TABS
+// ══════════════════════════════════════════════════════════════════════
+function switchTab(idx,btn){
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',i===idx));
+  document.querySelectorAll('.tab-pane').forEach((p,i)=>p.classList.toggle('active',i===idx));
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  FILE PARSER
+// ══════════════════════════════════════════════════════════════════════
+function parseRaw(text){
+  // A data line must contain ONLY numbers, signs, dots, E/e notation, and whitespace
+  // Lines with ANY letters (except E/e in scientific notation) or colons are headers
+  const dataLineRe=/^[\s\d+\-.,eE]+$/;
+  const lines=text.replace(/\r/g,'').split('\n');
+  const rows=[];
+  let nc=0;
+  for(const line of lines){
+    const L=line.trim();
+    if(!L) continue;
+    // Skip if line contains colon (header key:value pairs) or non-numeric text
+    if(L.includes(':')) continue;
+    if(!dataLineRe.test(L)) continue;
+    const nums=L.split(/\s+/).map(Number).filter(v=>isFinite(v));
+    if(!nums.length) continue;
+    if(nc===0) nc=nums.length;
+    if(nums.length===nc) rows.push(nums);
+  }
+  return {rows, ncols:nc};
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  MODAL
+// ══════════════════════════════════════════════════════════════════════
+let _modalResolve=null, _modalRaw=null;
+
+function showModal(fname, parsed){
+  return new Promise(res=>{
+    _modalResolve=res; _modalRaw=parsed;
+    document.getElementById('modal-fname').textContent='File Settings — '+fname;
+
+    // Preview (5 rows)
+    const n=Math.min(5,parsed.rows.length);
+    let h='<thead><tr>'+parsed.rows[0].map((_,j)=>`<th>Col ${j+1}</th>`).join('')+'</tr></thead><tbody>';
+    for(let r=0;r<n;r++) h+='<tr>'+parsed.rows[r].map(v=>`<td>${v}</td>`).join('')+'</tr>';
+    document.getElementById('prev-tbl').innerHTML=h+'</tbody>';
+
+    // Column selector (only for multi-column)
+    const colRow=document.getElementById('col-row');
+    const mCol=document.getElementById('m-col');
+    if(parsed.ncols>1){
+      colRow.style.display='';
+      mCol.innerHTML=parsed.rows[0].map((_,j)=>`<option value="${j}">Col ${j+1}</option>`).join('');
+    } else {
+      colRow.style.display='none';
+    }
+
+    document.getElementById('file-modal').classList.add('open');
+  });
+}
+function confirmModal(){
+  const dt=parseFloat(document.getElementById('m-dt').value)||0;
+  if(dt<=0){alert('Please enter a valid time step dt > 0.');return;}
+  const units=document.getElementById('m-units').value;
+  const comp=document.getElementById('m-comp').value;
+  const col=parseInt(document.getElementById('m-col').value)||0;
+  document.getElementById('file-modal').classList.remove('open');
+  if(_modalResolve){_modalResolve({dt,units,comp,col});_modalResolve=null;}
+}
+function cancelModal(){
+  document.getElementById('file-modal').classList.remove('open');
+  if(_modalResolve){_modalResolve(null);_modalResolve=null;}
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  ADD FILES
+// ══════════════════════════════════════════════════════════════════════
+function addFiles(){document.getElementById('file-inp').click();}
+
+async function onFiles(){
+  const files=Array.from(document.getElementById('file-inp').files);
+  for(const f of files){
+    const text=await f.text();
+    const parsed=parseRaw(text);
+    if(!parsed.rows.length){alert('No numeric data in '+f.name);continue;}
+    const sel=await showModal(f.name,parsed);
+    if(!sel) continue;
+    // Convert units → m/s²
+    const col=sel.col;
+    let ag=parsed.rows.map(r=>r[col]);
+    if(sel.units==='cm/s2') ag=ag.map(v=>v*0.01);
+    else if(sel.units==='g') ag=ag.map(v=>v*9.80665);
+    S.files.push({name:f.name, ag, dt:sel.dt, units:sel.units, comp:sel.comp, ncols:parsed.ncols});
+  }
+  document.getElementById('file-inp').value='';
+  refreshTable();
+  updateFileStatus();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  TABLE
+// ══════════════════════════════════════════════════════════════════════
+function refreshTable(){
+  document.getElementById('file-body').innerHTML=S.files.map((f,i)=>`
+    <tr class="${selectedRows.has(i)?'sel-row':''}">
+      <td><input type="checkbox" class="fcb" data-i="${i}" ${selectedRows.has(i)?'checked':''}
+          onchange="onRowCheck(${i},this.checked)"></td>
+      <td title="${f.name}" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.name}</td>
+      <td style="font-family:monospace;">${f.dt}</td>
+      <td style="font-size:10px;">${f.units}</td>
+      <td><span class="badge badge-${f.comp.toLowerCase()}">${f.comp}</span></td>
+    </tr>`).join('');
+}
+
+const selectedRows=new Set();
+function onRowCheck(i,checked){
+  if(checked) selectedRows.add(i); else selectedRows.delete(i);
+  refreshTable();
+}
+function toggleAll(){
+  const c=document.getElementById('sel-all').checked;
+  S.files.forEach((_,i)=>c?selectedRows.add(i):selectedRows.delete(i));
+  refreshTable();
+}
+function removeSelected(){
+  const rm=[...selectedRows].sort((a,b)=>b-a);
+  rm.forEach(i=>S.files.splice(i,1));
+  selectedRows.clear();
+  refreshTable(); updateFileStatus();
+}
+function updateFileStatus(){
+  const el=document.getElementById('file-status');
+  if(!S.files.length){el.textContent='No files loaded.';el.className='info warn';}
+  else{el.textContent=`✔ ${S.files.length} file(s) loaded.`;el.className='info ok';}
+}
+
+function onModeChange(){
+  const isEC8=document.getElementById('mode-sel').value==='2D';
+  document.getElementById('mode-info').textContent=isEC8
+    ?'Check exactly one EW file and one NS file.'
+    :'Select (check) one file to compute 1D spectrum.';
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  INTEGRATION METHODS
+// ══════════════════════════════════════════════════════════════════════
+function linspace(a,b,n){
+  const arr=[]; const s=(b-a)/(n-1);
+  for(let i=0;i<n;i++) arr.push(a+i*s);
+  return arr;
+}
+
+// Newmark-β (β=1/4, γ=1/2 — average acceleration)
+function nmSpectrum(ag,dt,T,xi){
+  const beta=0.25,gamma=0.5;
+  const a0=1/(beta*dt*dt),a1=gamma/(beta*dt),a2=1/(beta*dt);
+  const a3=1/(2*beta)-1,a4=gamma/beta-1;
+  const N=T.length,nt=ag.length;
+  const Sd=new Float64Array(N),Sv=new Float64Array(N),Sa=new Float64Array(N);
+  for(let j=0;j<N;j++){
+    const wn=2*Math.PI/T[j],c=2*xi*wn;
+    const Keff=wn*wn+a0+c*a1;
+    let u=0,v=0,acc=-ag[0],umax=0;
+    for(let i=0;i<nt-1;i++){
+      const Peff=-ag[i+1]+(a0+c*a1)*u+(a2+c*a4)*v+a3*acc;
+      const un=Peff/Keff;
+      const an=a0*(un-u)-a2*v-a3*acc;
+      v=v+dt*((1-gamma)*acc+gamma*an);
+      u=un;acc=an;
+      if(Math.abs(u)>umax)umax=Math.abs(u);
+    }
+    Sd[j]=umax;Sv[j]=wn*umax;Sa[j]=wn*wn*umax;
+  }
+  return{Sd,Sv,Sa};
+}
+
+// Nigam-Jennings exact method (1969)
+function njSpectrum(ag,dt,T,xi){
+  const N=T.length,nt=ag.length;
+  const Sd=new Float64Array(N),Sv=new Float64Array(N),Sa=new Float64Array(N);
+  const sq=Math.sqrt(1-xi*xi);
+  for(let j=0;j<N;j++){
+    const wn=2*Math.PI/T[j],wn2=wn*wn;
+    const wd=wn*sq;
+    const E=Math.exp(-xi*wn*dt);
+    const S=Math.sin(wd*dt),C=Math.cos(wd*dt);
+    const A11=E*(C+(xi/sq)*S),A12=E*S/wd;
+    const A21=-E*(wn/sq)*S,A22=E*(C-(xi/sq)*S);
+    const EC=(A11+A22)/2;
+    const B11=A11/wn2+2*xi*(EC-1)/(dt*wn2*wn)-A12*(1-2*xi*xi)/(dt*wn2);
+    const B12=-1/wn2-2*xi*(EC-1)/(dt*wn2*wn)+A12*(1-2*xi*xi)/(dt*wn2);
+    const B21=(A21+(1-A11)/dt)/wn2,B22=(A11-1)/(dt*wn2);
+    let u=0,v=0,umax=0;
+    for(let i=0;i<nt-1;i++){
+      const fn=ag[i],fn1=ag[i+1];
+      const un=A11*u+A12*v+B11*fn+B12*fn1;
+      const vn=A21*u+A22*v+B21*fn+B22*fn1;
+      u=un;v=vn;
+      if(Math.abs(u)>umax)umax=Math.abs(u);
+    }
+    Sd[j]=umax;Sv[j]=wn*umax;Sa[j]=wn2*umax;
+  }
+  return{Sd,Sv,Sa};
+}
+
+// Duhamel's Integral
+function dhSpectrum(ag,dt,T,xi){
+  const N=T.length,nt=ag.length;
+  const Sd=new Float64Array(N),Sv=new Float64Array(N),Sa=new Float64Array(N);
+  const sq=Math.sqrt(1-xi*xi);
+  for(let j=0;j<N;j++){
+    const wn=2*Math.PI/T[j],wn2=wn*wn;
+    const wd=wn*sq;
+    const E=Math.exp(-xi*wn*dt);
+    const S=Math.sin(wd*dt),C=Math.cos(wd*dt);
+    const fac=1/wn2;
+    const K1=xi*wn*(1-E*C)+wd*E*S;
+    const K2=wd*(1-E*C)-xi*wn*E*S;
+    let I1=0,I2=0,umax=0;
+    for(let i=0;i<nt-1;i++){
+      const favg=(ag[i]+ag[i+1])/2;
+      const I1n=E*(I1*C-I2*S)+fac*K1*favg;
+      const I2n=E*(I1*S+I2*C)+fac*K2*favg;
+      I1=I1n;I2=I2n;
+      const u=Math.abs(-I2/wd);
+      if(u>umax)umax=u;
+    }
+    Sd[j]=umax;Sv[j]=wn*umax;Sa[j]=wn2*umax;
+  }
+  return{Sd,Sv,Sa};
+}
+
+function runMethod(meth,ag,dt,T,xi){
+  if(meth==='nm') return nmSpectrum(ag,dt,T,xi);
+  if(meth==='nj') return njSpectrum(ag,dt,T,xi);
+  if(meth==='dh') return dhSpectrum(ag,dt,T,xi);
+  return njSpectrum(ag,dt,T,xi);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  COMPUTE
+// ══════════════════════════════════════════════════════════════════════
+const C_EW='#0000b3',C_NS='#cc0000',C_GM='#7a00b0';
+const C_NM='#0000b3',C_NJ='#cc0000',C_DH='#006600';
+const METH_NAMES={nm:'Newmark-β',nj:'Nigam-Jennings',dh:"Duhamel's Integral"};
+
+function compute(){
+  const mode=document.getElementById('mode-sel').value;
+  const meth=document.getElementById('method-sel').value;
+  const xi=parseFloat(document.getElementById('xi').value)||0.05;
+  const Tmin=parseFloat(document.getElementById('Tmin').value)||0.02;
+  const Tmax=parseFloat(document.getElementById('Tmax').value)||4.0;
+  const NT=parseInt(document.getElementById('NT').value)||200;
+  const T=linspace(Tmin,Tmax,NT);
+
+  const status=document.getElementById('comp-status');
+
+  if(mode==='1D'){
+    // Need exactly 1 file (checked, or if only 1 file total)
+    const sel=[...selectedRows];
+    let idx=-1;
+    if(S.files.length===1) idx=0;
+    else if(sel.length===1) idx=sel[0];
+    else{status.textContent='⚠ Select exactly 1 file for 1D.';status.className='info err';return;}
+
+    const f=S.files[idx];
+    if(f.dt<=0){status.textContent='⚠ dt not set for this file.';status.className='info err';return;}
+
+    status.textContent='Computing…';status.className='info warn';
+
+    setTimeout(()=>{
+      const traces_sa=[],traces_sv=[],traces_sd=[];
+      if(meth==='all'){
+        const meths=['nm','nj','dh'];
+        const cols=[C_NM,C_NJ,C_DH];
+        meths.forEach((m,i)=>{
+          const r=runMethod(m,f.ag,f.dt,T,xi);
+          const Sa_g=Array.from(r.Sa).map(v=>v/9.80665);
+          const Sv_cm=Array.from(r.Sv).map(v=>v*100);
+          const Sd_cm=Array.from(r.Sd).map(v=>v*100);
+          const nm=METH_NAMES[m];
+          traces_sa.push({x:T,y:Sa_g,mode:'lines',name:nm,line:{color:cols[i],width:1.5}});
+          traces_sv.push({x:T,y:Sv_cm,mode:'lines',name:nm,line:{color:cols[i],width:1.5}});
+          traces_sd.push({x:T,y:Sd_cm,mode:'lines',name:nm,line:{color:cols[i],width:1.5}});
+        });
+        S.results={T,mode:'1D',meth:'all'};
+      } else {
+        const r=runMethod(meth,f.ag,f.dt,T,xi);
+        const Sa_g=Array.from(r.Sa).map(v=>v/9.80665);
+        const Sv_cm=Array.from(r.Sv).map(v=>v*100);
+        const Sd_cm=Array.from(r.Sd).map(v=>v*100);
+        const lbl=`${f.name} [${f.comp}] — ξ=${xi}`;
+        traces_sa.push({x:T,y:Sa_g,mode:'lines',name:lbl,line:{color:C_EW,width:2}});
+        traces_sv.push({x:T,y:Sv_cm,mode:'lines',name:lbl,line:{color:C_EW,width:2}});
+        traces_sd.push({x:T,y:Sd_cm,mode:'lines',name:lbl,line:{color:C_EW,width:2}});
+        S.results={T,Sa:Sa_g,Sv:Sv_cm,Sd:Sd_cm,mode:'1D',meth};
+      }
+      plotSpectra(traces_sa,traces_sv,traces_sd,
+        `PSa (g) — ξ=${xi} — ${meth==='all'?'All Methods':METH_NAMES[meth]}`,
+        'PSa  (g)','PSv  (cm/s)','Sd  (cm)');
+      status.textContent=`✔ Done. ${T.length} periods, dt=${f.dt} s, N=${f.ag.length} steps.`;
+      status.className='info ok';
+    },30);
+
+  } else {
+    // 2D mode: need EW + NS
+    const ewFiles=S.files.filter(f=>f.comp==='EW');
+    const nsFiles=S.files.filter(f=>f.comp==='NS');
+    // Use checked files if available
+    const sel=[...selectedRows];
+    let fEW=null,fNS=null;
+    if(sel.length===2){
+      const a=S.files[sel[0]],b=S.files[sel[1]];
+      if(a.comp==='EW'&&b.comp==='NS'){fEW=a;fNS=b;}
+      else if(a.comp==='NS'&&b.comp==='EW'){fEW=b;fNS=a;}
+    }
+    if(!fEW&&ewFiles.length>=1) fEW=ewFiles[0];
+    if(!fNS&&nsFiles.length>=1) fNS=nsFiles[0];
+
+    if(!fEW||!fNS){
+      status.textContent='⚠ Need at least one EW and one NS file. Assign components in file settings.';
+      status.className='info err';return;
+    }
+    if(fEW.dt<=0||fNS.dt<=0){status.textContent='⚠ Check dt values.';status.className='info err';return;}
+
+    status.textContent='Computing 2D geometric mean…';status.className='info warn';
+
+    setTimeout(()=>{
+      const mUsed=meth==='all'?'nj':meth;
+      const rEW=runMethod(mUsed,fEW.ag,fEW.dt,T,xi);
+      const rNS=runMethod(mUsed,fNS.ag,fNS.dt,T,xi);
+      const Sa_EW=Array.from(rEW.Sa).map(v=>v/9.80665);
+      const Sa_NS=Array.from(rNS.Sa).map(v=>v/9.80665);
+      const Sa_GM=Sa_EW.map((v,i)=>Math.sqrt(v*Sa_NS[i]));
+      const Sv_EW=Array.from(rEW.Sv).map(v=>v*100);
+      const Sv_NS=Array.from(rNS.Sv).map(v=>v*100);
+      const Sv_GM=Sv_EW.map((v,i)=>Math.sqrt(v*Sv_NS[i]));
+      const Sd_EW=Array.from(rEW.Sd).map(v=>v*100);
+      const Sd_NS=Array.from(rNS.Sd).map(v=>v*100);
+      const Sd_GM=Sd_EW.map((v,i)=>Math.sqrt(v*Sd_NS[i]));
+
+      const mk=(y,name,col,dash='solid')=>({x:T,y,mode:'lines',name,line:{color:col,width:2,dash}});
+      const ts_sa=[mk(Sa_EW,'E-W',C_EW),mk(Sa_NS,'N-S',C_NS),mk(Sa_GM,'Geom. Mean',C_GM,'dash')];
+      const ts_sv=[mk(Sv_EW,'E-W',C_EW),mk(Sv_NS,'N-S',C_NS),mk(Sv_GM,'Geom. Mean',C_GM,'dash')];
+      const ts_sd=[mk(Sd_EW,'E-W',C_EW),mk(Sd_NS,'N-S',C_NS),mk(Sd_GM,'Geom. Mean',C_GM,'dash')];
+
+      S.results={T,Sa_EW,Sa_NS,Sa_GM,Sv_EW,Sv_NS,Sv_GM,Sd_EW,Sd_NS,Sd_GM,mode:'2D',meth:mUsed};
+      plotSpectra(ts_sa,ts_sv,ts_sd,
+        `PSa (g) — ξ=${xi} — 2D Geometric Mean [${METH_NAMES[mUsed]||mUsed}]`,
+        'PSa  (g)','PSv  (cm/s)','Sd  (cm)',true);
+      status.textContent=`✔ Done. 2D GM computed. EW: ${fEW.name}  NS: ${fNS.name}`;
+      status.className='info ok';
+    },30);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  PLOT
+// ══════════════════════════════════════════════════════════════════════
+const FONT={family:'IBM Plex Sans'};
+const AXSTYLE={gridcolor:'#e5e8f0',zeroline:false,titlefont:FONT,tickfont:FONT};
+
+function makeLayout(title,yLabel,showLegend){
+  const l={
+    title:{text:title,font:{...FONT,size:12}},
+    xaxis:{...AXSTYLE,title:'Period  T  (s)'},
+    yaxis:{...AXSTYLE,title:yLabel},
+    margin:{l:58,r:16,t:36,b:44},
+    plot_bgcolor:'white',paper_bgcolor:'#f4f6fb',
+    font:FONT,showlegend:showLegend,
+    legend:{font:{family:'IBM Plex Sans',size:9}},
+  };
+  if(S.axLimits) l.xaxis.range=[S.axLimits.xmin,S.axLimits.xmax];
+  return l;
+}
+
+function plotSpectra(ts_sa,ts_sv,ts_sd,titleSa,ylSa,ylSv,ylSd,showAllLegend){
+  const showLegSa=showAllLegend||ts_sa.length>1;
+  const showLegOther=!!showAllLegend;
+  Plotly.react('plt-sa',ts_sa,makeLayout(titleSa,ylSa,showLegSa),{responsive:true});
+  Plotly.react('plt-sv',ts_sv,makeLayout('PSv  (cm/s)',ylSv,showLegOther),{responsive:true});
+  Plotly.react('plt-sd',ts_sd,makeLayout('Sd  (cm)',ylSd,showLegOther),{responsive:true});
+}
+
+function clearPlots(){
+  ['plt-sa','plt-sv','plt-sd'].forEach(id=>Plotly.purge(id));
+  S.results=null;
+  initPlots();
+  document.getElementById('comp-status').textContent='';
+}
+
+function initPlots(){
+  const cfg={responsive:true};
+  ['plt-sa','plt-sv','plt-sd'].forEach((id,i)=>{
+    const ylabels=['PSa  (g)','PSv  (cm/s)','Sd  (cm)'];
+    Plotly.react(id,[],{
+      ...makeLayout('',ylabels[i],false),
+      annotations:[{x:0.5,y:0.5,xref:'paper',yref:'paper',
+        text:'Load files and click Compute',font:{size:13,color:'#aaa'},showarrow:false}]
+    },cfg);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  AXIS LIMITS
+// ══════════════════════════════════════════════════════════════════════
+function applyAxis(){
+  S.axLimits={
+    xmin:parseFloat(document.getElementById('xmin').value)||0,
+    xmax:parseFloat(document.getElementById('xmax').value)||4,
+  };
+  if(S.results) compute(); else initPlots();
+}
+function resetAxis(){
+  S.axLimits=null;
+  document.getElementById('xmin').value=0;
+  document.getElementById('xmax').value=4;
+  if(S.results) compute(); else initPlots();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  EXPORT CSV
+// ══════════════════════════════════════════════════════════════════════
+function exportCSV(){
+  if(!S.results){alert('No results to export. Run Compute first.');return;}
+  const r=S.results;
+  let csv='Response Spectrum Results\n';
+  csv+=`Method: ${METH_NAMES[r.meth]||r.meth}   Mode: ${r.mode}\n\n`;
+  if(r.mode==='1D'){
+    csv+='T_s,PSa_g,PSv_cms,Sd_cm\n';
+    r.T.forEach((_,i)=>csv+=`${r.T[i].toFixed(5)},${r.Sa[i].toFixed(6)},${r.Sv[i].toFixed(6)},${r.Sd[i].toFixed(6)}\n`);
+  } else {
+    csv+='T_s,PSa_EW_g,PSa_NS_g,PSa_GM_g,PSv_EW_cms,PSv_NS_cms,PSv_GM_cms,Sd_EW_cm,Sd_NS_cm,Sd_GM_cm\n';
+    r.T.forEach((_,i)=>csv+=`${r.T[i].toFixed(5)},${r.Sa_EW[i].toFixed(6)},${r.Sa_NS[i].toFixed(6)},${r.Sa_GM[i].toFixed(6)},${r.Sv_EW[i].toFixed(6)},${r.Sv_NS[i].toFixed(6)},${r.Sv_GM[i].toFixed(6)},${r.Sd_EW[i].toFixed(6)},${r.Sd_NS[i].toFixed(6)},${r.Sd_GM[i].toFixed(6)}\n`);
+  }
+  const a=Object.assign(document.createElement('a'),{
+    href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:'ResponseSpectrum.csv'
+  });
+  a.click();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════════════════
+initPlots();
+</script>
+</body>
+</html>
