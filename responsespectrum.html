@@ -88,6 +88,10 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
 
     <!-- TAB 1: Files -->
     <div class="tab-pane active" id="t1">
+      <div style="background:#eef2fb;border:1px solid #c8d4ef;border-radius:5px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#2a3a6a;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:16px;">🇨🇿</span>
+        <span><strong>TA CR – SIGMA / M.ERA-NET Cofund</strong><br>Technology Agency of the Czech Republic</span>
+      </div>
       <div class="sep">Ground Motion Records</div>
       <div class="info" style="color:#777;font-style:italic;margin-bottom:6px;">
         CSV or text files — headers auto-skipped. Set dt, units and component per file.
@@ -113,7 +117,7 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
       <div class="sep">Computation Mode</div>
       <div class="row">
         <span class="lbl bold" style="min-width:80px;">Mode:</span>
-        <select id="mode-sel" class="sm w120" onchange="onModeChange()">
+        <select id="mode-sel" class="sm" style="width:100%;" onchange="onModeChange()">
           <option value="1D">1D — single component</option>
           <option value="2D">2D — geometric mean (EW + NS)</option>
         </select>
