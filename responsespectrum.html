@@ -589,7 +589,7 @@ function compute(){
   const Tmin=parseFloat(document.getElementById('Tmin').value)||0.02;
   const Tmax=parseFloat(document.getElementById('Tmax').value)||4.0;
   const NT=parseInt(document.getElementById('NT').value)||200;
-  const T=linspace(Tmin,Tmax,NT);
+  const T=logspace(Tmin,Tmax,NT);
 
   const status=document.getElementById('comp-status');
 
