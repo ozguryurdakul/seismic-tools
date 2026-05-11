@@ -483,10 +483,9 @@ function onModeChange(){
 // ══════════════════════════════════════════════════════════════════════
 //  INTEGRATION METHODS
 // ══════════════════════════════════════════════════════════════════════
-function linspace(a,b,n){
-  const arr=[]; const s=(b-a)/(n-1);
-  for(let i=0;i<n;i++) arr.push(a+i*s);
-  return arr;
+function logspace(a,b,n){
+  const la=Math.log10(a),lb=Math.log10(b),s=(lb-la)/(n-1);
+  return Array.from({length:n},(_,i)=>Math.pow(10,la+i*s));
 }
 
 // Newmark-β (β=1/4, γ=1/2 — average acceleration)
