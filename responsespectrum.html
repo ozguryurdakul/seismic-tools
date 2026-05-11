@@ -100,7 +100,7 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
       <input type="file" id="file-inp" accept=".csv,.txt,.asc,.dat,.AT2" multiple style="display:none" onchange="onFiles()">
       <button class="btn btn-red" onclick="removeSelected()">✖  Remove Selected</button>
 
-      <div class="tbl-wrap">
+      <div class="tbl-wrap" style="height:110px;">
         <table id="file-tbl">
           <thead><tr>
             <th style="width:22px;"><input type="checkbox" id="sel-all" onchange="toggleAll()"></th>
@@ -600,15 +600,15 @@ function compute(){
       const Sd_NS=Array.from(rNS.Sd).map(v=>v*100);
       const Sd_GM=Sd_EW.map((v,i)=>Math.sqrt(v*Sd_NS[i]));
 
-      const mk=(y,name,col)=>({x:T,y,mode:'lines',name,line:{color:col,width:2}});
-      const ts_sa=[mk(Sa_EW,'E-W',C_EW),mk(Sa_NS,'N-S',C_NS),mk(Sa_GM,'Geom. Mean',C_GM)];
-      const ts_sv=[mk(Sv_EW,'E-W',C_EW),mk(Sv_NS,'N-S',C_NS),mk(Sv_GM,'Geom. Mean',C_GM)];
-      const ts_sd=[mk(Sd_EW,'E-W',C_EW),mk(Sd_NS,'N-S',C_NS),mk(Sd_GM,'Geom. Mean',C_GM)];
+      const mk=(y,name,col,dash='solid')=>({x:T,y,mode:'lines',name,line:{color:col,width:2,dash}});
+      const ts_sa=[mk(Sa_EW,'E-W',C_EW),mk(Sa_NS,'N-S',C_NS),mk(Sa_GM,'Geom. Mean',C_GM,'dash')];
+      const ts_sv=[mk(Sv_EW,'E-W',C_EW),mk(Sv_NS,'N-S',C_NS),mk(Sv_GM,'Geom. Mean',C_GM,'dash')];
+      const ts_sd=[mk(Sd_EW,'E-W',C_EW),mk(Sd_NS,'N-S',C_NS),mk(Sd_GM,'Geom. Mean',C_GM,'dash')];
 
       S.results={T,Sa_EW,Sa_NS,Sa_GM,Sv_EW,Sv_NS,Sv_GM,Sd_EW,Sd_NS,Sd_GM,mode:'2D',meth:mUsed};
       plotSpectra(ts_sa,ts_sv,ts_sd,
         `PSa (g) — ξ=${xi} — 2D Geometric Mean [${METH_NAMES[mUsed]||mUsed}]`,
-        'PSa  (g)','PSv  (cm/s)','Sd  (cm)');
+        'PSa  (g)','PSv  (cm/s)','Sd  (cm)',true);
       status.textContent=`✔ Done. 2D GM computed. EW: ${fEW.name}  NS: ${fNS.name}`;
       status.className='info ok';
     },30);
@@ -635,11 +635,12 @@ function makeLayout(title,yLabel,showLegend){
   return l;
 }
 
-function plotSpectra(ts_sa,ts_sv,ts_sd,titleSa,ylSa,ylSv,ylSd){
-  const showLeg=ts_sa.length>1;
-  Plotly.react('plt-sa',ts_sa,makeLayout(titleSa,ylSa,showLeg),{responsive:true});
-  Plotly.react('plt-sv',ts_sv,makeLayout('PSv  (cm/s)',ylSv,false),{responsive:true});
-  Plotly.react('plt-sd',ts_sd,makeLayout('Sd  (cm)',ylSd,false),{responsive:true});
+function plotSpectra(ts_sa,ts_sv,ts_sd,titleSa,ylSa,ylSv,ylSd,showAllLegend){
+  const showLegSa=showAllLegend||ts_sa.length>1;
+  const showLegOther=!!showAllLegend;
+  Plotly.react('plt-sa',ts_sa,makeLayout(titleSa,ylSa,showLegSa),{responsive:true});
+  Plotly.react('plt-sv',ts_sv,makeLayout('PSv  (cm/s)',ylSv,showLegOther),{responsive:true});
+  Plotly.react('plt-sd',ts_sd,makeLayout('Sd  (cm)',ylSd,showLegOther),{responsive:true});
 }
 
 function clearPlots(){
