@@ -345,13 +345,19 @@ function showModal(fname, parsed){
       document.getElementById('m-col-ns').value=Math.min(2,parsed.ncols-1).toString();
     }
 
-    // Show correct rows
+    // Show correct rows based on number of columns
     const single=parsed.ncols===1;
     document.getElementById('single-comp-row').style.display=single?'':'none';
     document.getElementById('mode-row').style.display=single?'none':'';
-    // Reset mode to 1D
-    document.getElementById('m-mode').value='1D';
-    onModalModeChange();
+    document.getElementById('comp-row').style.display=single?'none':'';
+    document.getElementById('col1d-row').style.display=single?'none':'';
+    document.getElementById('col2d-row').style.display='none';
+    // Reset mode to 1D for multi-column
+    if(!single){
+      document.getElementById('m-mode').value='1D';
+      document.getElementById('comp-row').style.display='';
+      document.getElementById('col1d-row').style.display='';
+    }
 
     document.getElementById('file-modal').classList.add('open');
   });
