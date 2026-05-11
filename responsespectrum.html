@@ -201,6 +201,7 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
 
 <!-- Right: 3 plots -->
 <div id="plot-panel">
+  <div id="plt-rec" style="height:110px;flex-shrink:0;"></div>
   <div class="plot-div" id="plt-sa"></div>
   <div class="plot-div" id="plt-sv"></div>
   <div class="plot-div" id="plt-sd"></div>
@@ -228,7 +229,26 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
           <option value="g">g</option>
         </select>
       </div>
-      <div class="field-row">
+      <!-- Single-column: component only -->
+      <div class="field-row" id="single-comp-row">
+        <label>Component</label>
+        <select class="modal-sel" id="m-comp-single">
+          <option value="EW">E-W</option>
+          <option value="NS">N-S</option>
+          <option value="UD">U-D</option>
+        </select>
+        <span style="font-size:10px;color:#888;font-style:italic;">(single-column — 1D only)</span>
+      </div>
+      <!-- Multi-column: Mode selector -->
+      <div class="field-row" id="mode-row" style="display:none;">
+        <label>Mode</label>
+        <select class="modal-sel" id="m-mode" onchange="onModalModeChange()">
+          <option value="1D">1D</option>
+          <option value="2D">2D (same file)</option>
+        </select>
+      </div>
+      <!-- 1D: Component + Column -->
+      <div class="field-row" id="comp-row" style="display:none;">
         <label>Component</label>
         <select class="modal-sel" id="m-comp">
           <option value="EW">E-W</option>
@@ -236,9 +256,16 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
           <option value="UD">U-D</option>
         </select>
       </div>
-      <div class="field-row" id="col-row" style="display:none;">
-        <label>Data column</label>
+      <div class="field-row" id="col1d-row" style="display:none;">
+        <label>Column</label>
         <select class="modal-sel" id="m-col"></select>
+      </div>
+      <!-- 2D: EW col + NS col -->
+      <div class="field-row" id="col2d-row" style="display:none;">
+        <label>E-W col</label>
+        <select class="modal-sel" id="m-col-ew"></select>
+        <label style="min-width:60px;margin-left:8px;">N-S col</label>
+        <select class="modal-sel" id="m-col-ns"></select>
       </div>
     </div>
     <div class="modal-foot">
@@ -306,27 +333,63 @@ function showModal(fname, parsed){
     for(let r=0;r<n;r++) h+='<tr>'+parsed.rows[r].map(v=>`<td>${v}</td>`).join('')+'</tr>';
     document.getElementById('prev-tbl').innerHTML=h+'</tbody>';
 
-    // Column selector (only for multi-column)
-    const colRow=document.getElementById('col-row');
-    const mCol=document.getElementById('m-col');
+    // Column options
+    const opts=parsed.rows[0].map((_,j)=>`<option value="${j}">Col ${j+1}</option>`).join('');
+    document.getElementById('m-col').innerHTML=opts;
+    document.getElementById('m-col-ew').innerHTML=opts;
+    document.getElementById('m-col-ns').innerHTML=opts;
+    // Default: col2 for single/EW, col3 for NS (if available)
     if(parsed.ncols>1){
-      colRow.style.display='';
-      mCol.innerHTML=parsed.rows[0].map((_,j)=>`<option value="${j}">Col ${j+1}</option>`).join('');
-    } else {
-      colRow.style.display='none';
+      document.getElementById('m-col').value='1';
+      document.getElementById('m-col-ew').value='1';
+      document.getElementById('m-col-ns').value=Math.min(2,parsed.ncols-1).toString();
     }
+
+    // Show correct rows
+    const single=parsed.ncols===1;
+    document.getElementById('single-comp-row').style.display=single?'':'none';
+    document.getElementById('mode-row').style.display=single?'none':'';
+    // Reset mode to 1D
+    document.getElementById('m-mode').value='1D';
+    onModalModeChange();
 
     document.getElementById('file-modal').classList.add('open');
   });
 }
+
+function onModalModeChange(){
+  const is2D=document.getElementById('m-mode').value==='2D';
+  document.getElementById('comp-row').style.display=is2D?'none':'';
+  document.getElementById('col1d-row').style.display=is2D?'none':'';
+  document.getElementById('col2d-row').style.display=is2D?'':'none';
+}
+
 function confirmModal(){
   const dt=parseFloat(document.getElementById('m-dt').value)||0;
   if(dt<=0){alert('Please enter a valid time step dt > 0.');return;}
   const units=document.getElementById('m-units').value;
-  const comp=document.getElementById('m-comp').value;
-  const col=parseInt(document.getElementById('m-col').value)||0;
+  const single=_modalRaw.ncols===1;
+
+  let result;
+  if(single){
+    // Single column file
+    const comp=document.getElementById('m-comp-single').value;
+    result={dt,units,comp,mode:'1D',col:0,colEW:0,colNS:0};
+  } else {
+    const mode=document.getElementById('m-mode').value;
+    if(mode==='2D'){
+      const colEW=parseInt(document.getElementById('m-col-ew').value);
+      const colNS=parseInt(document.getElementById('m-col-ns').value);
+      if(colEW===colNS){alert('E-W and N-S columns must be different.');return;}
+      result={dt,units,comp:'2D',mode:'2D',col:colEW,colEW,colNS};
+    } else {
+      const comp=document.getElementById('m-comp').value;
+      const col=parseInt(document.getElementById('m-col').value);
+      result={dt,units,comp,mode:'1D',col,colEW:col,colNS:col};
+    }
+  }
   document.getElementById('file-modal').classList.remove('open');
-  if(_modalResolve){_modalResolve({dt,units,comp,col});_modalResolve=null;}
+  if(_modalResolve){_modalResolve(result);_modalResolve=null;}
 }
 function cancelModal(){
   document.getElementById('file-modal').classList.remove('open');
@@ -346,12 +409,21 @@ async function onFiles(){
     if(!parsed.rows.length){alert('No numeric data in '+f.name);continue;}
     const sel=await showModal(f.name,parsed);
     if(!sel) continue;
-    // Convert units → m/s²
-    const col=sel.col;
-    let ag=parsed.rows.map(r=>r[col]);
-    if(sel.units==='cm/s2') ag=ag.map(v=>v*0.01);
-    else if(sel.units==='g') ag=ag.map(v=>v*9.80665);
-    S.files.push({name:f.name, ag, dt:sel.dt, units:sel.units, comp:sel.comp, ncols:parsed.ncols});
+
+    if(sel.mode==='2D'){
+      // Add two entries: EW and NS from same file
+      let agEW=parsed.rows.map(r=>r[sel.colEW]);
+      let agNS=parsed.rows.map(r=>r[sel.colNS]);
+      if(sel.units==='cm/s2'){agEW=agEW.map(v=>v*0.01);agNS=agNS.map(v=>v*0.01);}
+      else if(sel.units==='g'){agEW=agEW.map(v=>v*9.80665);agNS=agNS.map(v=>v*9.80665);}
+      S.files.push({name:f.name.replace(/\.[^.]+$/,'')+'_EW', ag:agEW, dt:sel.dt, units:sel.units, comp:'EW', ncols:parsed.ncols});
+      S.files.push({name:f.name.replace(/\.[^.]+$/,'')+'_NS', ag:agNS, dt:sel.dt, units:sel.units, comp:'NS', ncols:parsed.ncols});
+    } else {
+      let ag=parsed.rows.map(r=>r[sel.col]);
+      if(sel.units==='cm/s2') ag=ag.map(v=>v*0.01);
+      else if(sel.units==='g') ag=ag.map(v=>v*9.80665);
+      S.files.push({name:f.name, ag, dt:sel.dt, units:sel.units, comp:sel.comp, ncols:parsed.ncols});
+    }
   }
   document.getElementById('file-inp').value='';
   refreshTable();
@@ -561,6 +633,7 @@ function compute(){
         'PSa  (g)','PSv  (cm/s)','Sd  (cm)');
       status.textContent=`✔ Done. ${T.length} periods, dt=${f.dt} s, N=${f.ag.length} steps.`;
       status.className='info ok';
+      plotRecord([f]);
     },30);
 
   } else {
@@ -611,13 +684,35 @@ function compute(){
         'PSa  (g)','PSv  (cm/s)','Sd  (cm)',true);
       status.textContent=`✔ Done. 2D GM computed. EW: ${fEW.name}  NS: ${fNS.name}`;
       status.className='info ok';
+      plotRecord([fEW,fNS]);
     },30);
   }
 }
 
 // ══════════════════════════════════════════════════════════════════════
-//  PLOT
+//  RECORD PLOT
 // ══════════════════════════════════════════════════════════════════════
+function plotRecord(files){
+  const traces=files.map((f,i)=>{
+    const cols=[C_EW,C_NS,C_GM];
+    const t=Array.from({length:f.ag.length},(_,k)=>k*f.dt);
+    const ag_cms=f.ag.map(v=>v*100); // back to cm/s² for display
+    return{x:t,y:ag_cms,mode:'lines',name:f.name,
+      line:{color:cols[i%3],width:0.8},hoverinfo:'skip'};
+  });
+  const layout={
+    margin:{l:52,r:16,t:6,b:28},
+    xaxis:{title:'Time  (s)',titlefont:{family:'IBM Plex Sans',size:10},
+      tickfont:{family:'IBM Plex Sans',size:9},gridcolor:'#e5e8f0',zeroline:false},
+    yaxis:{title:'a (cm/s²)',titlefont:{family:'IBM Plex Sans',size:10},
+      tickfont:{family:'IBM Plex Sans',size:9},gridcolor:'#e5e8f0',zeroline:true,zerolinecolor:'#ccc'},
+    plot_bgcolor:'white',paper_bgcolor:'#f4f6fb',
+    showlegend:files.length>1,
+    legend:{font:{family:'IBM Plex Sans',size:9},orientation:'h',x:0,y:1.3},
+    font:{family:'IBM Plex Sans'},
+  };
+  Plotly.react('plt-rec',traces,layout,{responsive:true,displayModeBar:false});
+}
 const FONT={family:'IBM Plex Sans'};
 const AXSTYLE={gridcolor:'#e5e8f0',zeroline:false,titlefont:FONT,tickfont:FONT};
 
@@ -644,21 +739,27 @@ function plotSpectra(ts_sa,ts_sv,ts_sd,titleSa,ylSa,ylSv,ylSd,showAllLegend){
 }
 
 function clearPlots(){
-  ['plt-sa','plt-sv','plt-sd'].forEach(id=>Plotly.purge(id));
+  ['plt-rec','plt-sa','plt-sv','plt-sd'].forEach(id=>Plotly.purge(id));
   S.results=null;
   initPlots();
   document.getElementById('comp-status').textContent='';
 }
 
 function initPlots(){
-  const cfg={responsive:true};
+  const cfg={responsive:true,displayModeBar:false};
+  const emptyRec={margin:{l:52,r:16,t:6,b:28},plot_bgcolor:'white',paper_bgcolor:'#f4f6fb',
+    xaxis:{title:'Time  (s)',titlefont:{family:'IBM Plex Sans',size:10},gridcolor:'#e5e8f0'},
+    yaxis:{title:'a (cm/s²)',titlefont:{family:'IBM Plex Sans',size:10},gridcolor:'#e5e8f0'},
+    annotations:[{x:0.5,y:0.5,xref:'paper',yref:'paper',text:'Record will appear here after Compute',
+      font:{size:11,color:'#bbb'},showarrow:false}]};
+  Plotly.react('plt-rec',[],emptyRec,cfg);
   ['plt-sa','plt-sv','plt-sd'].forEach((id,i)=>{
     const ylabels=['PSa  (g)','PSv  (cm/s)','Sd  (cm)'];
     Plotly.react(id,[],{
       ...makeLayout('',ylabels[i],false),
       annotations:[{x:0.5,y:0.5,xref:'paper',yref:'paper',
         text:'Load files and click Compute',font:{size:13,color:'#aaa'},showarrow:false}]
-    },cfg);
+    },{responsive:true});
   });
 }
 
