@@ -126,14 +126,30 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
       <button class="btn btn-violet" onclick="compute()" id="btn-compute">⚡  Compute Response Spectra</button>
       <button class="btn btn-gray" onclick="clearPlots()">✖  Clear Plots</button>
       <div id="comp-status" class="info" style="margin-top:4px;font-size:11px;"></div>
+
+      <div class="sep">Acknowledgement</div>
+      <div style="font-size:11px;color:#444;line-height:1.6;margin-bottom:6px;">
+        This tool was developed within the framework of a project co-financed from the state budget by the
+        <strong>Technology Agency of the Czech Republic</strong> under the
+        <strong>SIGMA Programme</strong> within the <strong>M.ERA-NET Cofund</strong>.
+      </div>
+
+      <div class="sep">Citation</div>
+      <div style="font-size:11px;color:#444;line-height:1.6;font-style:italic;margin-bottom:4px;">
+        Yurdakul, Özgür (2026). <em>ResponseSpectrumGUI: A web-based earthquake response spectrum calculator.</em>
+        Faculty of Transport Engineering, University of Pardubice. Available at:
+        <a href="https://ozguryurdakul.github.io/seismic-tools/responsespectrum.html"
+           style="color:var(--blue);word-break:break-all;" target="_blank">
+           https://ozguryurdakul.github.io/seismic-tools/responsespectrum.html</a>
+      </div>
     </div>
 
     <!-- TAB 2: Settings -->
     <div class="tab-pane" id="t2">
       <div class="sep">Integration Method</div>
       <select id="method-sel" class="sm" style="width:100%;margin-bottom:6px;">
-        <option value="nj">Nigam-Jennings (Exact)</option>
         <option value="nm">Newmark-β (Avg. Acceleration)</option>
+        <option value="nj">Nigam-Jennings (Exact)</option>
         <option value="dh">Duhamel's Integral</option>
         <option value="all">All 3 Methods (Overlay)</option>
       </select>
@@ -173,22 +189,6 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
 
       <div class="sep">Export</div>
       <button class="btn btn-outline" onclick="exportCSV()">📋  Export Results (CSV)…</button>
-
-      <div class="sep">Acknowledgement</div>
-      <div style="font-size:11px;color:#444;line-height:1.6;margin-bottom:6px;">
-        This tool was developed within the framework of a project co-financed from the state budget by the
-        <strong>Technology Agency of the Czech Republic</strong> under the
-        <strong>SIGMA Programme</strong> within the <strong>M.ERA-NET Cofund</strong>.
-      </div>
-
-      <div class="sep">Citation</div>
-      <div style="font-size:11px;color:#444;line-height:1.6;font-style:italic;">
-        Yurdakul, Özgür (2026). <em>ResponseSpectrumGUI: A web-based earthquake response spectrum calculator.</em>
-        Faculty of Transport Engineering, University of Pardubice. Available at:
-        <a href="https://ozguryurdakul.github.io/seismic-tools/responsespectrum.html"
-           style="color:var(--blue);word-break:break-all;" target="_blank">
-           https://ozguryurdakul.github.io/seismic-tools/responsespectrum.html</a>
-      </div>
     </div>
 
   </div>
@@ -266,14 +266,19 @@ function switchTab(idx,btn){
 //  FILE PARSER
 // ══════════════════════════════════════════════════════════════════════
 function parseRaw(text){
-  const commentChars=new Set(['%','#','!',';','/']);
+  // A data line must contain ONLY numbers, signs, dots, E/e notation, and whitespace
+  // Lines with ANY letters (except E/e in scientific notation) or colons are headers
+  const dataLineRe=/^[\s\d+\-.,eE]+$/;
   const lines=text.replace(/\r/g,'').split('\n');
   const rows=[];
   let nc=0;
   for(const line of lines){
     const L=line.trim();
-    if(!L||commentChars.has(L[0])) continue;
-    const nums=L.split(/[\s,]+/).map(Number).filter(v=>!isNaN(v)&&v.toString()!=='');
+    if(!L) continue;
+    // Skip if line contains colon (header key:value pairs) or non-numeric text
+    if(L.includes(':')) continue;
+    if(!dataLineRe.test(L)) continue;
+    const nums=L.split(/\s+/).map(Number).filter(v=>isFinite(v));
     if(!nums.length) continue;
     if(nc===0) nc=nums.length;
     if(nums.length===nc) rows.push(nums);
