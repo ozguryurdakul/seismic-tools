@@ -112,7 +112,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
 <div id="panel">
   <div id="hdr">
     <h1>⚡ Response Spectrum Scaling</h1>
-    <p>SpectraScalingGUI v2.0 · University of Pardubice</p>
+    <p>SpectraScalingGUI v2.1 · University of Pardubice</p>
   </div>
 
   <div id="std-bar">
@@ -150,12 +150,18 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
       </div>
       <div id="T1-info" class="info warn">⚠ Enter building period to show period markers.</div>
 
-      <div class="sep">Computed from T₁</div>
-      <div class="row" style="font-size:11px;color:#444;gap:14px;">
-        <span id="lT1">T₁ = --</span>
-        <span id="l02T">0.2T₁ = --</span>
-        <span id="lupT">1.5T₁ = --</span>
+      <div class="sep">Scaling Window  (pre-filled from T₁ — editable)</div>
+      <div class="row" style="margin-bottom:3px;">
+        <span class="lbl" style="width:76px;font-size:10px;">T low (s)</span>
+        <input type="number" id="wT1" class="w60" min="0" step="0.01"
+               title="Lower bound of scaling window (default 0.2 T₁)"
+               oninput="refreshAll()" onchange="refreshAll()">
+        <span class="lbl" style="width:76px;font-size:10px;">T high (s)</span>
+        <input type="number" id="wT2" class="w60" min="0" step="0.01"
+               title="Upper bound of scaling window (default 1.5 T₁ for TBDY, 2.0 T₁ for EC8)"
+               oninput="refreshAll()" onchange="refreshAll()">
       </div>
+      <div id="win-info" class="info" style="font-size:10px;color:#555;"></div>
 
       <div class="sep">Plot Axis Limits</div>
       <div class="row">
@@ -483,7 +489,7 @@ async function loadTarget() {
     document.getElementById('tgt-status').className='info ok';
     document.getElementById('tgt-file').textContent='File:  '+f.name;
     document.getElementById("tgt-cols").textContent=`T col: ${sel.Tcol}     Sa col: ${sel.Sacol}`;
-    redraw(); refreshAll();
+    refreshAll();
   };
   inp.click();
 }
@@ -492,28 +498,57 @@ async function loadTarget() {
 //  T1 + STANDARD
 // ══════════════════════════════════════════════════════════════════════
 function onT1Change() {
-  S.T1=parseFloat(document.getElementById('T1').value)||0;
-  const isEC8=S.standard==='EC8';
-  const m=isEC8?2.0:1.5, lb=isEC8?'2T₁':'1.5T₁';
-  if(S.T1>0){
-    document.getElementById('T1-info').textContent=`Markers active:  0.2T₁ = ${(0.2*S.T1).toFixed(3)} s   ${lb} = ${(m*S.T1).toFixed(3)} s`;
-    document.getElementById('T1-info').className='info ok';
-    document.getElementById('lT1').textContent=`T₁ = ${S.T1.toFixed(3)} s`;
-    document.getElementById('l02T').textContent=`0.2T₁ = ${(0.2*S.T1).toFixed(3)} s`;
-    document.getElementById('lupT').textContent=`${lb} = ${(m*S.T1).toFixed(3)} s`;
+  S.T1 = parseFloat(document.getElementById('T1').value) || 0;
+  const isEC8 = S.standard === 'EC8';
+  const m = isEC8 ? 2.0 : 1.5;
+  const lb = isEC8 ? '2T₁' : '1.5T₁';
+  const wT1el = document.getElementById('wT1');
+  const wT2el = document.getElementById('wT2');
+  const wiEl  = document.getElementById('win-info');
+
+  if (S.T1 > 0) {
+    // Pre-fill window fields with the code default ONLY if they are currently
+    // empty — preserves any value the user has already typed manually.
+    if (!wT1el.value) wT1el.value = (0.2 * S.T1).toFixed(3);
+    if (!wT2el.value) wT2el.value = (m   * S.T1).toFixed(3);
+
+    document.getElementById('T1-info').textContent =
+      `Markers active:  0.2T₁ = ${(0.2*S.T1).toFixed(3)} s   ${lb} = ${(m*S.T1).toFixed(3)} s`;
+    document.getElementById('T1-info').className = 'info ok';
+
+    const lo = parseFloat(wT1el.value), hi = parseFloat(wT2el.value);
+    const defaultLo = +(0.2*S.T1).toFixed(3), defaultHi = +(m*S.T1).toFixed(3);
+    const custom = (lo !== defaultLo) || (hi !== defaultHi);
+    wiEl.textContent = custom
+      ? `Custom window: ${lo.toFixed(3)} – ${hi.toFixed(3)} s  (code default: ${defaultLo} – ${defaultHi})`
+      : `Code default window: 0.2T₁ – ${lb}  =  ${lo.toFixed(3)} – ${hi.toFixed(3)} s`;
+    wiEl.style.color = custom ? '#7a4a00' : '#555';
   } else {
-    document.getElementById('T1-info').textContent='⚠ Enter building period to show period markers.';
-    document.getElementById('T1-info').className='info warn';
-    document.getElementById('lT1').textContent='T₁ = --';
-    document.getElementById('l02T').textContent='0.2T₁ = --';
-    document.getElementById('lupT').textContent=lb+' = --';
+    wT1el.value = '';
+    wT2el.value = '';
+    document.getElementById('T1-info').textContent = '⚠ Enter building period to show period markers.';
+    document.getElementById('T1-info').className = 'info warn';
+    wiEl.textContent = '';
   }
-  redraw(); refreshAll();
+  refreshAll();
 }
 
 function onStandardChange() {
-  S.standard=document.getElementById('standard').value;
-  const isEC8=S.standard==='EC8';
+  const prevIsEC8 = S.standard === 'EC8';
+  S.standard = document.getElementById('standard').value;
+  const isEC8 = S.standard === 'EC8';
+
+  // If the window fields still hold the previous standard's auto-value,
+  // clear them so onT1Change() re-fills with the new standard's default.
+  if (S.T1 > 0) {
+    const oldM   = prevIsEC8 ? 2.0 : 1.5;
+    const wT1el  = document.getElementById('wT1');
+    const wT2el  = document.getElementById('wT2');
+    const oldLo  = +(0.2  * S.T1).toFixed(3);
+    const oldHi  = +(oldM * S.T1).toFixed(3);
+    if (parseFloat(wT1el.value) === oldLo) wT1el.value = '';
+    if (parseFloat(wT2el.value) === oldHi) wT2el.value = '';
+  }
   document.getElementById('btn-auto').textContent=
     isEC8?'⚡  Auto-Scale Factor (SF)  [0.2T₁ – 2T₁]':'⚡  Auto-Scale Factor (SF)  [0.2T₁ – 1.5T₁]';
   document.getElementById('thresh-lbl').style.display=isEC8?'none':'';
@@ -544,7 +579,7 @@ async function onFiles() {
     S.records.push({name:f.name.replace(/\.csv$/i,''),T:sel.T,Sa:sel.Sa,SF:1,comp:sel.comp,Tcol:sel.Tcol,Sacol:sel.Sacol});
   }
   document.getElementById('file-inp').value='';
-  refreshTable(); updateRecStatus(); redraw(); refreshAll();
+  refreshTable(); updateRecStatus(); refreshAll();
 }
 
 function refreshTable(){
@@ -562,7 +597,7 @@ function toggleAll(){ const c=document.getElementById('sel-all').checked; docume
 function removeSelected(){
   const rm=new Set([...document.querySelectorAll('.rcb:checked')].map(c=>+c.dataset.i));
   S.records=S.records.filter((_,i)=>!rm.has(i));
-  refreshTable(); updateRecStatus(); redraw(); refreshAll();
+  refreshTable(); updateRecStatus(); refreshAll();
 }
 
 function updateRecStatus(){
@@ -573,13 +608,13 @@ function updateRecStatus(){
 
 function applyManual(){
   document.querySelectorAll("#rec-body input[type=number]").forEach((inp,i)=>{if(i<S.records.length)S.records[i].SF=+inp.value||1;});
-  redraw(); refreshAll();
+  refreshAll();
 }
 function resetSFs(){
   S.records.forEach(r=>r.SF=1);
   refreshTable();
   document.getElementById("auto-info").textContent="All SFs reset to 1.0.";
-  redraw(); refreshAll();
+  refreshAll();
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -623,13 +658,21 @@ function linSolve(A,b){
 //  SCALING CORE
 // ══════════════════════════════════════════════════════════════════════
 function getWindow(){
-  const isEC8=S.standard==='EC8', m=isEC8?2.0:1.5;
-  return {T1:0.2*S.T1, T2:m*S.T1, isEC8};
+  const isEC8 = S.standard === 'EC8';
+  const m     = isEC8 ? 2.0 : 1.5;
+  // Use user-edited fields; fall back to formula only if fields are blank
+  const lo = parseFloat(document.getElementById('wT1').value);
+  const hi = parseFloat(document.getElementById('wT2').value);
+  return {
+    T1:    isFinite(lo) ? lo : 0.2 * S.T1,
+    T2:    isFinite(hi) ? hi : m   * S.T1,
+    isEC8: isEC8
+  };
 }
 
 function buildMat(){
   const isEC8=S.standard==='EC8';
-  const T1=0.2*S.T1, T2=S.T1*(isEC8?2.0:1.5);
+  const {T1,T2}=getWindow();
   const commonT=linspace(T1,T2,300);
   const SaTgt=interp1(S.target.T,S.target.Sa,commonT);
   const validTgt=SaTgt.map(v=>isFinite(v)&&v>0);  // ~isnan & >0
@@ -792,7 +835,7 @@ function autoScale(){
     const cv=std(bestSF)/mean(bestSF);
     document.getElementById('auto-info').textContent=
       `✔ ${n} records. α=${bestA}  CV=${cv.toFixed(3)}  SF=[${Math.min(...bestSF).toFixed(3)} – ${Math.max(...bestSF).toFixed(3)}]`;
-    refreshTable(); redraw(); refreshAll();
+    refreshTable(); refreshAll();
   },50);
 }
 
@@ -804,7 +847,7 @@ function applyAlpha(){
   const cv=std(SF)/mean(SF);
   document.getElementById('auto-info').textContent=
     `✔ α=${alpha} applied.  CV=${cv.toFixed(3)}  SF=[${Math.min(...SF).toFixed(3)} – ${Math.max(...SF).toFixed(3)}]`;
-  refreshTable(); redraw(); refreshAll();
+  refreshTable(); refreshAll();
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -848,6 +891,11 @@ function updateRecCountBadge(){
 }
 
 function refreshAll(){
+  // Redraw the plot first so markers and mean line always reflect
+  // the current window bounds, SF values, and target — including
+  // when the user edits the T low / T high fields directly.
+  redraw();
+
   const ready = S.target && S.T1>0 && S.records.length;
   const badge = document.getElementById('comp-badge');
 
@@ -911,7 +959,7 @@ function checkCompliance(){
   document.getElementById('r-T1').textContent=S.T1>0?S.T1.toFixed(3)+' s':'Not set';
   if(!S.target||S.T1<=0||!S.records.length)return;
 
-  const m=isEC8?2.0:1.5,T1=0.2*S.T1,T2=m*S.T1;
+  const {T1,T2}=getWindow();
   document.getElementById('r-02T').textContent=T1.toFixed(3)+' s';
   document.getElementById('r-upT').textContent=T2.toFixed(3)+' s';
 
@@ -1062,10 +1110,11 @@ function redraw(){
 
   const shapes=[],anns=[];
   if(S.T1>0){
-    const isEC8=S.standard==='EC8',m=isEC8?2.0:1.5,lb=isEC8?'2T₁':'1.5T₁';
+    const {T1:wLo,T2:wHi,isEC8}=getWindow();
+    const lb=isEC8?'2T₁':'1.5T₁';
     [{x:S.T1,dash:'solid',lbl:`T₁=${S.T1.toFixed(3)} s`},
-     {x:0.2*S.T1,dash:'dash',lbl:`0.2T₁=${(0.2*S.T1).toFixed(3)} s`},
-     {x:m*S.T1,dash:'dash',lbl:`${lb}=${(m*S.T1).toFixed(3)} s`}
+     {x:wLo,  dash:'dash', lbl:`T low=${wLo.toFixed(3)} s`},
+     {x:wHi,  dash:'dash', lbl:`T high=${wHi.toFixed(3)} s`}
     ].forEach(mk=>{
       shapes.push({type:'line',x0:mk.x,x1:mk.x,y0:0,y1:1,yref:'paper',
         line:{color:'#1a4faa',width:1.4,dash:mk.dash}});
