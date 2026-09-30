@@ -76,7 +76,7 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
 <div id="panel">
   <div id="hdr">
     <h1>⚡ Response Spectrum Calculator</h1>
-    <p>ResponseSpectrumGUI v1.1 · University of Pardubice · TA CR – SIGMA</p>
+    <p>ResponseSpectrumGUI v2.2 · University of Pardubice · TA CR – SIGMA</p>
   </div>
 
   <div class="tab-bar">
@@ -145,6 +145,14 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
         <a href="https://ozguryurdakul.github.io/seismic-tools/responsespectrum.html"
            style="color:var(--blue);word-break:break-all;" target="_blank">
            https://ozguryurdakul.github.io/seismic-tools/responsespectrum.html</a>
+      </div>
+
+      <div class="sep">Related Tools</div>
+      <div style="font-size:11px;line-height:1.8;">
+        ⚡ <a href="https://ozguryurdakul.github.io/seismic-tools/groundmotion.html"
+           style="color:var(--blue);" target="_blank">Ground Motion Processor</a><br>
+        ⚡ <a href="https://ozguryurdakul.github.io/seismic-tools/spectrascaling.html"
+           style="color:var(--blue);" target="_blank">Response Spectrum Scaling</a>
       </div>
     </div>
 
@@ -219,8 +227,8 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
       <div class="field-row">
         <label>Time step dt (s) *</label>
         <input type="number" class="modal-inp" id="m-dt" value="0.005" min="0.0001" step="0.001">
-        <span style="font-size:10px;color:#888;">required</span>
       </div>
+      <div id="m-dt-hint" style="font-size:10px;color:#555;font-style:italic;margin:-4px 0 8px 0;"></div>
       <div class="field-row">
         <label>Acceleration units</label>
         <select class="modal-sel" id="m-units">
@@ -297,24 +305,55 @@ function switchTab(idx,btn){
 //  FILE PARSER
 // ══════════════════════════════════════════════════════════════════════
 function parseRaw(text){
-  // A data line must contain ONLY numbers, signs, dots, E/e notation, and whitespace
-  // Lines with ANY letters (except E/e in scientific notation) or colons are headers
   const dataLineRe=/^[\s\d+\-.,eE]+$/;
   const lines=text.replace(/\r/g,'').split('\n');
-  const rows=[];
+  const rows=[], meta={};
   let nc=0;
+
+  // PEER AT2 detection
+  let at2=null;
+  for(const line of lines){
+    const m=line.match(/NPTS=\s*(\d+).*DT=\s*([\d.]+)/i);
+    if(m){at2=m;break;}
+  }
+  if(at2){
+    const flat=[];
+    for(const line of lines){
+      const L=line.trim();
+      if(!L||/[A-Za-z]/.test(L)) continue;
+      L.split(/\s+/).map(Number).filter(v=>isFinite(v)).forEach(v=>flat.push(v));
+    }
+    const npts=parseInt(at2[1]);
+    return {rows:flat.slice(0,npts).map(v=>[v]),ncols:1,dt:parseFloat(at2[2]),units:'g',fmt:'PEER .AT2'};
+  }
+
   for(const line of lines){
     const L=line.trim();
     if(!L) continue;
-    // Skip if line contains colon (header key:value pairs) or non-numeric text
-    if(L.includes(':')) continue;
-    if(!dataLineRe.test(L)) continue;
+    // Parse header key:value pairs
+    const kv=L.match(/^([A-Za-z_/^0-9\-]+)\s*:\s*(.*)$/);
+    if(kv){meta[kv[1].toUpperCase()]=kv[2].trim();continue;}
+    if(L.includes(':')||!dataLineRe.test(L)) continue;
     const nums=L.split(/\s+/).map(Number).filter(v=>isFinite(v));
     if(!nums.length) continue;
     if(nc===0) nc=nums.length;
     if(nums.length===nc) rows.push(nums);
   }
-  return {rows, ncols:nc};
+
+  // Auto-detect dt from header
+  const out={rows,ncols:nc,dt:null,units:null,fmt:'text'};
+  const dtKey=['SAMPLING_INTERVAL_S','DT','SAMPLING_INTERVAL'].find(k=>meta[k]&&isFinite(parseFloat(meta[k])));
+  if(dtKey) out.dt=parseFloat(meta[dtKey]);
+
+  // Auto-detect units from header
+  if(meta.UNITS){
+    const u=meta.UNITS.toLowerCase().replace(/\s/g,'');
+    if(/^cm\/s(\^?2|²)$/.test(u)||u==='gal') out.units='cm/s2';
+    else if(/^m\/s(\^?2|²)$/.test(u)) out.units='m/s2';
+    else if(/^mm\/s(\^?2|²)$/.test(u)) out.units='mm/s2';
+    else if(u==='g') out.units='g';
+  }
+  return out;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -332,6 +371,21 @@ function showModal(fname, parsed){
     let h='<thead><tr>'+parsed.rows[0].map((_,j)=>`<th>Col ${j+1}</th>`).join('')+'</tr></thead><tbody>';
     for(let r=0;r<n;r++) h+='<tr>'+parsed.rows[r].map(v=>`<td>${v}</td>`).join('')+'</tr>';
     document.getElementById('prev-tbl').innerHTML=h+'</tbody>';
+
+    // Auto-fill dt: from header if found, else default (single-col → 0.005, multi-col → 0.01)
+    const defaultDt = parsed.ncols===1 ? 0.005 : 0.01;
+    document.getElementById('m-dt').value = parsed.dt || defaultDt;
+
+    // Auto-fill units if detected from header
+    if(parsed.units) document.getElementById('m-units').value = parsed.units;
+
+    // Show detected info
+    const hints=[];
+    if(parsed.dt) hints.push(`✔ dt = ${parsed.dt} s read from header`);
+    else hints.push(`⚠ dt not found — using default ${defaultDt} s`);
+    if(parsed.units) hints.push(`✔ units = ${parsed.units} read from header`);
+    const hintEl=document.getElementById('m-dt-hint');
+    if(hintEl) hintEl.textContent=hints.join('   ');
 
     // Column options
     const opts=parsed.rows[0].map((_,j)=>`<option value="${j}">Col ${j+1}</option>`).join('');
