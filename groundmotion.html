@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ground Motion Processor | University of Pardubice</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0f2244;--blue:#1a4faa;--blue2:#1e6dc0;--violet:#5b2d8e;
+  --green:#1a7a36;--red:#b81c1c;--gray:#6b7280;--light:#f4f6fb;
+  --border:#d1d9e6;--text:#1a1f2e;--sep-bg:#eceef6;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'IBM Plex Sans',sans-serif;font-size:13px;color:var(--text);background:#e8ecf3;display:flex;height:100vh;overflow:hidden;}
+#panel{width:400px;min-width:400px;background:white;display:flex;flex-direction:column;height:100vh;border-right:2px solid var(--border);box-shadow:4px 0 20px rgba(0,0,0,.08);}
+#hdr{background:linear-gradient(135deg,var(--navy) 0%,var(--blue) 100%);color:white;padding:12px 16px;flex-shrink:0;}
+#hdr h1{font-size:15px;font-weight:600;}
+#hdr p{font-size:10px;opacity:.75;margin-top:2px;}
+.tab-bar{display:flex;border-bottom:2px solid var(--border);flex-shrink:0;background:var(--light);}
+.tab-btn{flex:1;padding:9px 4px;border:none;background:transparent;font-family:inherit;font-size:12px;font-weight:500;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);background:white;}
+.tab-btn:hover:not(.active){color:var(--text);background:#eef0f8;}
+.tab-content{flex:1;overflow-y:auto;padding:12px;}
+.tab-pane{display:none;}.tab-pane.active{display:block;}
+.sep{background:var(--sep-bg);color:#444;font-size:11px;font-style:italic;padding:3px 8px;border-radius:3px;margin:10px 0 5px;font-weight:500;}
+.sep:first-child{margin-top:0;}
+.row{display:flex;align-items:center;gap:6px;margin-bottom:5px;}
+.lbl{font-size:12px;color:#555;}
+.lbl.bold{font-weight:600;color:var(--text);}
+input[type=number],input[type=text],select.sm{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:white;color:var(--text);}
+input[type=number]:focus,select.sm:focus{outline:none;border-color:var(--blue);}
+.w50{width:54px;}.w70{width:68px;}.w90{width:90px;}.w120{width:120px;}
+.info{font-size:11px;margin-bottom:4px;}
+.ok{color:var(--green);}.warn{color:#7a4a00;}.err{color:var(--red);}
+button.btn{display:block;width:100%;padding:7px 10px;border:none;border-radius:5px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:4px;transition:filter .15s;}
+button.btn:hover{filter:brightness(1.1);}
+.btn-blue{background:var(--blue);color:white;}
+.btn-violet{background:var(--violet);color:white;}
+.btn-green{background:var(--green);color:white;}
+.btn-red{background:var(--red);color:white;}
+.btn-gray{background:#888;color:white;}
+.btn-outline{background:white;color:var(--gray);border:1px solid var(--border)!important;}
+.btn-inline{padding:5px 10px;width:auto;display:inline-block;}
+.tbl-wrap{height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:5px;margin-bottom:6px;}
+table{width:100%;border-collapse:collapse;}
+th{background:var(--light);font-size:11px;font-weight:600;padding:4px 5px;text-align:left;position:sticky;top:0;border-bottom:1px solid var(--border);}
+td{font-size:11px;padding:3px 5px;border-bottom:1px solid #f0f2f8;}
+tr:hover td{background:#f5f7fc;}
+.sel-row{background:#e8f0ff!important;}
+#footer{font-size:10px;color:#aaa;padding:6px 12px;border-top:1px solid var(--border);background:var(--light);flex-shrink:0;text-align:center;}
+#plot-panel{flex:1;display:flex;flex-direction:column;background:#f0f3f8;overflow:hidden;}
+.plot-div{flex:1;min-height:0;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:white;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.3);width:520px;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;}
+.modal-hdr{background:var(--navy);color:white;padding:11px 16px;font-weight:600;font-size:13px;display:flex;justify-content:space-between;}
+.modal-hdr button{background:none;border:none;color:white;font-size:18px;cursor:pointer;}
+.modal-body{padding:14px;overflow-y:auto;flex:1;}
+.modal-foot{padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;}
+.prev-wrap{max-height:120px;overflow:auto;border:1px solid var(--border);border-radius:4px;margin-bottom:10px;}
+.prev-wrap table th,.prev-wrap table td{white-space:nowrap;font-size:11px;padding:2px 6px;}
+.field-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.field-row label{font-size:12px;font-weight:600;min-width:110px;}
+select.modal-sel{font-family:inherit;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:4px 6px;background:white;}
+input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:4px 6px;width:100px;}
+.badge{display:inline-block;font-size:10px;border-radius:3px;padding:1px 5px;font-weight:600;margin-left:4px;}
+.badge-ew{background:#dde8ff;color:#1a4faa;}
+.badge-ns{background:#ffdde0;color:#8b0000;}
+.badge-ud{background:#ddf5e8;color:#1a6a30;}
+.plot-tabs{display:flex;background:white;border-bottom:2px solid var(--border);flex-shrink:0;}
+.plot-tabs .tab-btn{flex:0 0 auto;padding:8px 18px;}
+.plot-view{flex:1;display:none;flex-direction:column;min-height:0;}
+.plot-view.active{display:flex;}
+.res-tbl td,.res-tbl th{font-size:12px;padding:4px 6px;}
+.res-tbl td.num{font-family:'IBM Plex Mono',monospace;text-align:right;}
+.res-big{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--navy);}
+.note{background:#fff8e6;border:1px solid #f0d9a0;border-radius:5px;padding:6px 9px;font-size:11px;color:#6a4a00;line-height:1.5;margin:6px 0;}
+.hint{font-size:10.5px;color:#888;font-style:italic;margin:-2px 0 6px 0;line-height:1.4;}
+.lbl.fix{min-width:120px;}
+input[type=checkbox]{accent-color:var(--blue);}
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <div id="hdr">
+    <h1>〰 Ground Motion Processor — PGA · PGV · PGD</h1>
+    <p>GroundMotionGUI v1.0 · University of Pardubice · TA CR – SIGMA</p>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab(0,this)">Files</button>
+    <button class="tab-btn" onclick="switchTab(1,this)">Processing</button>
+    <button class="tab-btn" onclick="switchTab(2,this)">Results</button>
+  </div>
+
+  <div class="tab-content">
+
+    <!-- TAB 1: Files -->
+    <div class="tab-pane active" id="t1">
+      <div style="background:#eef2fb;border:1px solid #c8d4ef;border-radius:5px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#2a3a6a;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:16px;">🇨🇿</span>
+        <span><strong>TA CR – SIGMA / M.ERA-NET Cofund</strong><br>Technology Agency of the Czech Republic</span>
+      </div>
+      <div class="sep">Acceleration Records</div>
+      <div class="info" style="color:#777;font-style:italic;margin-bottom:6px;">
+        Text / CSV / AFAD .asc / PEER .AT2 — headers auto-skipped. dt and units are read from the header when available.
+      </div>
+      <button class="btn btn-green" onclick="addFiles()">➕  Add File(s)…</button>
+      <input type="file" id="file-inp" accept=".csv,.txt,.asc,.dat,.AT2,.at2" multiple style="display:none" onchange="onFiles()">
+      <button class="btn btn-red" onclick="removeSelected()">✖  Remove Selected</button>
+
+      <div class="tbl-wrap" style="height:130px;">
+        <table id="file-tbl">
+          <thead><tr>
+            <th style="width:22px;"></th>
+            <th>Record</th>
+            <th style="width:55px;">dt (s)</th>
+            <th style="width:50px;">N</th>
+            <th style="width:48px;">Units</th>
+          </tr></thead>
+          <tbody id="file-body"></tbody>
+        </table>
+      </div>
+      <div id="file-status" class="info warn">No files loaded.</div>
+
+      <div class="sep" style="margin-top:10px;"></div>
+      <button class="btn btn-violet" onclick="compute()" id="btn-compute">⚡  Process Selected Record</button>
+      <button class="btn btn-gray" onclick="clearPlots()">✖  Clear Plots</button>
+      <div id="comp-status" class="info" style="margin-top:4px;font-size:11px;"></div>
+
+      <div class="sep">Acknowledgement</div>
+      <div style="font-size:11px;color:#444;line-height:1.6;margin-bottom:6px;">
+        This tool was developed within the framework of a project co-financed from the state budget by the
+        <strong>Technology Agency of the Czech Republic</strong> under the
+        <strong>SIGMA Programme</strong> within the <strong>M.ERA-NET Cofund</strong>.
+      </div>
+
+      <div class="sep">Citation</div>
+      <div style="font-size:11px;color:#444;line-height:1.6;font-style:italic;margin-bottom:4px;">
+        Yurdakul, Özgür (2026). <em>GroundMotionGUI: A web-based tool for baseline correction, filtering and
+        PGA/PGV/PGD computation of accelerograms.</em>
+        Faculty of Transport Engineering, University of Pardubice. Available at:
+        <a href="https://ozguryurdakul.github.io/seismic-tools/groundmotion.html"
+           style="color:var(--blue);word-break:break-all;" target="_blank">
+           https://ozguryurdakul.github.io/seismic-tools/groundmotion.html</a>
+      </div>
+    </div>
+
+    <!-- TAB 2: Processing -->
+    <div class="tab-pane" id="t2">
+      <div class="note">Defaults match SeismoSignal's default processing: linear baseline +
+        Butterworth band-pass 0.1–25 Hz, order 4. <b>PGD depends strongly on the low cut-off</b> —
+        always check the fc sweep on the Results tab.</div>
+
+      <div class="sep">Baseline Correction (on acceleration)</div>
+      <div class="row">
+        <span class="lbl bold fix">Polynomial order:</span>
+        <select id="o-bo" class="sm" style="width:150px;">
+          <option value="-1">None (mean only)</option>
+          <option value="0">0 — constant</option>
+          <option value="1" selected>1 — linear</option>
+          <option value="2">2 — quadratic</option>
+          <option value="3">3 — cubic</option>
+        </select>
+      </div>
+      <div class="row">
+        <span class="lbl bold fix">Pre-event mean (s):</span>
+        <input type="number" id="o-pre" class="w70" value="0" min="0" step="1">
+      </div>
+      <div class="hint">If &gt; 0, the mean of the first N seconds is removed instead of the polynomial.</div>
+      <div class="row">
+        <span class="lbl bold fix">Cosine taper (s):</span>
+        <input type="number" id="o-taper" class="w70" value="1" min="0" step="0.5">
+        <span class="lbl">each end</span>
+      </div>
+
+      <div class="sep">Filter (Butterworth)</div>
+      <div class="row">
+        <span class="lbl bold fix">Type:</span>
+        <select id="o-ft" class="sm" style="width:150px;" onchange="onFilterTypeChange()">
+          <option value="bandpass" selected>Band-pass</option>
+          <option value="highpass">High-pass</option>
+          <option value="none">None</option>
+        </select>
+      </div>
+      <div class="row">
+        <span class="lbl bold fix">Low cut-off fc (Hz):</span>
+        <input type="number" id="o-f1" class="w70" value="0.1" min="0.001" step="0.01">
+      </div>
+      <div class="row" id="row-f2">
+        <span class="lbl bold fix">High cut-off (Hz):</span>
+        <input type="number" id="o-f2" class="w70" value="25" min="0.1" step="1">
+      </div>
+      <div class="row">
+        <span class="lbl bold fix">Order (per pass):</span>
+        <input type="number" id="o-order" class="w50" value="4" min="1" max="12" step="1">
+      </div>
+      <div class="row">
+        <span class="lbl bold fix">Phase:</span>
+        <select id="o-causal" class="sm" style="width:190px;">
+          <option value="0" selected>Acausal (zero-phase)</option>
+          <option value="1">Causal</option>
+        </select>
+      </div>
+      <div class="hint">Acausal = forward + backward pass: effective order 2×, −6 dB at fc.</div>
+      <div class="row">
+        <label class="lbl"><input type="checkbox" id="o-pad" checked> Zero pads (Boore 2005, 1.5·order/fc)</label>
+      </div>
+
+      <div class="sep">Integration</div>
+      <select id="o-int" class="sm" style="width:100%;margin-bottom:6px;">
+        <option value="linear" selected>Linear acceleration (exact)</option>
+        <option value="trapz">Trapezoidal (cumtrapz)</option>
+      </select>
+      <div class="row">
+        <span class="lbl bold fix">Displacement drift fix:</span>
+        <select id="o-dpo" class="sm" style="width:150px;">
+          <option value="0" selected>Off</option>
+          <option value="4">Polynomial t²…t⁴</option>
+          <option value="6">Polynomial t²…t⁶</option>
+        </select>
+      </div>
+      <div class="hint">Fits a polynomial to displacement and removes its 2nd derivative from the acceleration, so a, v and d stay consistent.</div>
+
+      <div class="sep">fc Sensitivity Sweep</div>
+      <div class="row">
+        <span class="lbl bold">fc values (Hz):</span>
+        <input type="text" id="o-sweep" style="flex:1;" value="0.03, 0.05, 0.07, 0.1, 0.15, 0.2">
+      </div>
+
+      <div class="sep" style="margin-top:10px;"></div>
+      <button class="btn btn-violet" onclick="compute()">⚡  Re-process</button>
+      <button class="btn btn-outline" onclick="resetDefaults()">↺  Reset to Defaults</button>
+    </div>
+
+    <!-- TAB 3: Results -->
+    <div class="tab-pane" id="t3">
+      <div id="res-empty" class="info warn">No results yet — load a record and click Process.</div>
+      <div id="res-body" style="display:none;">
+        <div class="sep">Peak Values</div>
+        <table class="res-tbl" style="margin-bottom:6px;">
+          <thead><tr><th></th><th style="text-align:right;">Value</th><th style="text-align:right;">at t (s)</th></tr></thead>
+          <tbody id="res-peaks"></tbody>
+        </table>
+        <div class="sep">Drift Checks</div>
+        <table class="res-tbl" style="margin-bottom:4px;"><tbody id="res-diag"></tbody></table>
+        <div id="res-drift-msg" class="info"></div>
+
+        <div class="sep">fc Sensitivity (other settings unchanged)</div>
+        <div class="tbl-wrap" style="height:auto;max-height:190px;">
+          <table class="res-tbl">
+            <thead><tr><th>fc (Hz)</th><th style="text-align:right;">PGV (cm/s)</th><th style="text-align:right;">PGD (cm)</th></tr></thead>
+            <tbody id="res-sweep"></tbody>
+          </table>
+        </div>
+        <div id="res-settings" class="hint" style="margin-top:4px;"></div>
+
+        <div class="sep">Export</div>
+        <button class="btn btn-outline" onclick="exportTH()">📋  Time Histories (CSV)…</button>
+        <button class="btn btn-outline" onclick="exportFAS()">📋  Fourier Spectrum (CSV)…</button>
+      </div>
+    </div>
+
+  </div>
+  <div id="footer">Özgür Yurdakul · University of Pardubice · CC BY-NC-SA 4.0</div>
+</div>
+
+<!-- Right: plots -->
+<div id="plot-panel">
+  <div class="plot-tabs">
+    <button class="tab-btn active" onclick="switchPlot(0,this)">Time Histories</button>
+    <button class="tab-btn" onclick="switchPlot(1,this)">Fourier Spectrum</button>
+  </div>
+  <div class="plot-view active" id="pv0">
+    <div class="plot-div" id="plt-acc"></div>
+    <div class="plot-div" id="plt-vel"></div>
+    <div class="plot-div" id="plt-dis"></div>
+  </div>
+  <div class="plot-view" id="pv1">
+    <div class="plot-div" id="plt-fas-log"></div>
+    <div class="plot-div" id="plt-fas-orig"></div>
+    <div class="plot-div" id="plt-fas-filt"></div>
+  </div>
+</div>
+
+<!-- File settings modal -->
+<div class="modal-overlay" id="file-modal">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <span id="modal-fname">File Settings</span>
+      <button onclick="cancelModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="prev-wrap"><table id="prev-tbl"></table></div>
+      <div id="m-detect" class="info ok" style="margin-bottom:8px;"></div>
+      <div class="field-row" id="m-timecol-row">
+        <label>Time column</label>
+        <select class="modal-sel" id="m-timecol" onchange="onTimeColChange()"></select>
+      </div>
+      <div class="field-row">
+        <label>Time step dt (s) *</label>
+        <input type="number" class="modal-inp" id="m-dt" value="0.005" min="0.0001" step="0.001">
+        <span style="font-size:10px;color:#888;" id="m-dt-note">required</span>
+      </div>
+      <div class="field-row">
+        <label>Acceleration units</label>
+        <select class="modal-sel" id="m-units">
+          <option value="cm/s2">cm/s²</option>
+          <option value="m/s2">m/s²</option>
+          <option value="mm/s2">mm/s²</option>
+          <option value="g">g</option>
+        </select>
+      </div>
+      <div class="field-row" id="m-acccol-row">
+        <label>Acceleration column</label>
+        <select class="modal-sel" id="m-acccol"></select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-blue btn-inline" onclick="confirmModal()">OK</button>
+      <button class="btn btn-outline btn-inline" onclick="cancelModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+//  PROCESSING CORE  (same algorithm as PGA_PGV_PGD_Fourier_v4.m)
+//  Every correction acts on ACCELERATION; velocity and displacement are
+//  always the exact integrals of the reported acceleration.
+// ══════════════════════════════════════════════════════════════════════
+
+// ---- least squares  min ||A c - y||  by Householder QR (A: m×p, row-major arrays)
+function lstsq(cols, y){
+  // cols: array of p Float64Arrays (columns), y: Float64Array(m)
+  const p=cols.length, m=y.length;
+  const A=cols.map(c=>Float64Array.from(c)), b=Float64Array.from(y);
+  for(let k=0;k<p;k++){
+    const a=A[k];
+    let nrm=0; for(let i=k;i<m;i++) nrm+=a[i]*a[i];
+    nrm=Math.sqrt(nrm); if(nrm===0) continue;
+    const alpha=a[k]>0?-nrm:nrm;
+    const v0=a[k]-alpha; a[k]=alpha;
+    // Householder vector v = [v0, a[k+1..m-1]] ; beta = 2/(v'v)
+    let vv=v0*v0; for(let i=k+1;i<m;i++) vv+=a[i]*a[i];
+    if(vv===0) continue;
+    const apply=(x)=>{
+      let s=v0*x[k]; for(let i=k+1;i<m;i++) s+=a[i]*x[i];
+      s*=2/vv; x[k]-=s*v0; for(let i=k+1;i<m;i++) x[i]-=s*a[i];
+    };
+    for(let j=k+1;j<p;j++) apply(A[j]);
+    apply(b);
+    for(let i=k+1;i<m;i++) a[i]=0;   // R below diagonal
+  }
+  const c=new Float64Array(p);
+  for(let k=p-1;k>=0;k--){
+    let s=b[k]; for(let j=k+1;j<p;j++) s-=A[j][k]*c[j];
+    c[k]=A[k][k]!==0?s/A[k][k]:0;
+  }
+  return c;
+}
+
+// ---- complex helpers for filter design
+const cx=(re,im=0)=>({re,im});
+const cadd=(a,b)=>cx(a.re+b.re,a.im+b.im), csub=(a,b)=>cx(a.re-b.re,a.im-b.im);
+const cmul=(a,b)=>cx(a.re*b.re-a.im*b.im,a.re*b.im+a.im*b.re);
+const cdiv=(a,b)=>{const d=b.re*b.re+b.im*b.im;return cx((a.re*b.re+a.im*b.im)/d,(a.im*b.re-a.re*b.im)/d);};
+const csqrt=a=>{const r=Math.hypot(a.re,a.im);let re=Math.sqrt((r+a.re)/2),im=Math.sqrt(Math.max(0,(r-a.re)/2));if(a.im<0)im=-im;return cx(re,im);};
+const cabs=a=>Math.hypot(a.re,a.im);
+
+// ---- Butterworth design in second-order sections (bilinear transform with
+//      pre-warping — same design as MATLAB/SciPy butter). Returns [[b0,b1,b2,a1,a2],...]
+function butterSOS(n, type, f1, f2, fs){
+  const K=2*fs, warp=f=>K*Math.tan(Math.PI*f/fs);
+  const proto=[]; for(let k=1;k<=n;k++){const th=Math.PI*(2*k+n-1)/(2*n);proto.push(cx(Math.cos(th),Math.sin(th)));}
+  let sp=[], nz0=0, nzInf=0;                  // analog poles, zeros at s=0 / s=inf
+  if(type==='highpass'){
+    const W=warp(f1); proto.forEach(p=>sp.push(cdiv(cx(W),p))); nz0=n;
+  } else {                                    // bandpass
+    const W1=warp(f1), W2=warp(f2), W0sq=W1*W2, Bw=W2-W1;
+    proto.forEach(p=>{
+      const pb=cmul(p,cx(Bw)), disc=csqrt(csub(cmul(pb,pb),cx(4*W0sq)));
+      sp.push(cmul(cadd(pb,disc),cx(0.5))); sp.push(cmul(csub(pb,disc),cx(0.5)));
+    });
+    nz0=n; nzInf=n;
+  }
+  const zp=sp.map(s=>cdiv(cadd(cx(K),s),csub(cx(K),s)));   // digital poles
+  // zeros: s=0 -> z=+1, s=inf -> z=-1 (a highpass has no zeros at inf, so the
+  // bilinear map adds none; all extra zeros already come from s=0)
+  // pair poles into sections
+  const cplx=zp.filter(p=>p.im>1e-12).sort((a,b)=>cabs(a)-cabs(b));
+  const real=zp.filter(p=>Math.abs(p.im)<=1e-12).map(p=>p.re).sort((a,b)=>a-b);
+  const secA=[];
+  cplx.forEach(p=>secA.push([-2*p.re,p.re*p.re+p.im*p.im]));
+  for(let i=0;i+1<real.length;i+=2) secA.push([-(real[i]+real[i+1]),real[i]*real[i+1]]);
+  let firstOrder=null; if(real.length%2) firstOrder=real[real.length-1];
+  const sos=[];
+  const nzp=nz0, nzm=nzInf;   // zeros at +1 and -1
+  let zp1=nzp, zm1=nzm;
+  const takeZeros=(k)=>{       // k = 2 (second order) or 1
+    const zs=[];
+    for(let j=0;j<k;j++){
+      if(zp1>0&&(zp1>=zm1)){zs.push(1);zp1--;} else if(zm1>0){zs.push(-1);zm1--;} else if(zp1>0){zs.push(1);zp1--;}
+    }
+    return zs;
+  };
+  secA.forEach(a=>{const z=takeZeros(2);const b=z.length===2?[1,-(z[0]+z[1]),z[0]*z[1]]:[1,-z[0],0];sos.push([b[0],b[1],b[2],a[0],a[1]]);});
+  if(firstOrder!==null){const z=takeZeros(1);sos.push([1,-z[0],0,-firstOrder,0]);}
+  // gain: |H|=1 at Nyquist (highpass) or at the band centre (bandpass)
+  let w;
+  if(type==='highpass') w=Math.PI;
+  else w=2*Math.atan(Math.sqrt(warp(f1)*warp(f2))/K);
+  const z1=cx(Math.cos(-w),Math.sin(-w)), z2=cmul(z1,z1);
+  let H=cx(1);
+  sos.forEach(s=>{
+    const num=cadd(cadd(cx(s[0]),cmul(cx(s[1]),z1)),cmul(cx(s[2]),z2));
+    const den=cadd(cadd(cx(1),cmul(cx(s[3]),z1)),cmul(cx(s[4]),z2));
+    H=cmul(H,cdiv(num,den));
+  });
+  const g=1/cabs(H);
+  sos[0][0]*=g; sos[0][1]*=g; sos[0][2]*=g;
+  return sos;
+}
+
+function sosfilt(sos, x){
+  let y=Float64Array.from(x);
+  for(const [b0,b1,b2,a1,a2] of sos){
+    let z1=0,z2=0;
+    for(let i=0;i<y.length;i++){
+      const xi=y[i], yi=b0*xi+z1;
+      z1=b1*xi-a1*yi+z2; z2=b2*xi-a2*yi; y[i]=yi;
+    }
+  }
+  return y;
+}
+
+// ---- integration from rest.  'linear': exact for piecewise-linear acceleration
+function integrateAcc(a, dt, method){
+  const n=a.length, v=new Float64Array(n), d=new Float64Array(n);
+  for(let i=1;i<n;i++) v[i]=v[i-1]+(a[i-1]+a[i])*dt/2;
+  if(method==='trapz') for(let i=1;i<n;i++) d[i]=d[i-1]+(v[i-1]+v[i])*dt/2;
+  else for(let i=1;i<n;i++) d[i]=d[i-1]+v[i-1]*dt+(2*a[i-1]+a[i])*dt*dt/6;
+  return {v,d};
+}
+
+// ---- FFT (radix-2, Bluestein for any length) -> one-sided |FFT|*dt
+function fftRadix2(re,im,inv){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){let bit=n>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;if(i<j){[re[i],re[j]]=[re[j],re[i]];[im[i],im[j]]=[im[j],im[i]];}}
+  for(let len=2;len<=n;len<<=1){
+    const ang=2*Math.PI/len*(inv?1:-1), wr=Math.cos(ang), wi=Math.sin(ang);
+    for(let i=0;i<n;i+=len){
+      let cr=1,ci=0;
+      for(let j=0;j<len/2;j++){
+        const ur=re[i+j],ui=im[i+j],k=i+j+len/2;
+        const vr=re[k]*cr-im[k]*ci, vi=re[k]*ci+im[k]*cr;
+        re[i+j]=ur+vr; im[i+j]=ui+vi; re[k]=ur-vr; im[k]=ui-vi;
+        const t=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=t;
+      }
+    }
+  }
+}
+function fftAny(x){
+  const n=x.length;
+  if((n&(n-1))===0){const re=Float64Array.from(x),im=new Float64Array(n);fftRadix2(re,im,false);return {re,im};}
+  let m=1; while(m<2*n-1) m<<=1;
+  const wr=new Float64Array(n), wi=new Float64Array(n);
+  for(let k=0;k<n;k++){const a=Math.PI*((k*k)%(2*n))/n;wr[k]=Math.cos(a);wi[k]=-Math.sin(a);}
+  const ar=new Float64Array(m),ai=new Float64Array(m),br=new Float64Array(m),bi=new Float64Array(m);
+  for(let k=0;k<n;k++){ar[k]=x[k]*wr[k];ai[k]=x[k]*wi[k];}
+  br[0]=wr[0];bi[0]=-wi[0];
+  for(let k=1;k<n;k++){br[k]=br[m-k]=wr[k];bi[k]=bi[m-k]=-wi[k];}
+  fftRadix2(ar,ai,false); fftRadix2(br,bi,false);
+  for(let k=0;k<m;k++){const r=ar[k]*br[k]-ai[k]*bi[k],i=ar[k]*bi[k]+ai[k]*br[k];ar[k]=r;ai[k]=i;}
+  fftRadix2(ar,ai,true);
+  const re=new Float64Array(n),im=new Float64Array(n);
+  for(let k=0;k<n;k++){const r=ar[k]/m,i=ai[k]/m;re[k]=r*wr[k]-i*wi[k];im[k]=r*wi[k]+i*wr[k];}
+  return {re,im};
+}
+function fourierAmp(a, dt){
+  const n=a.length, {re,im}=fftAny(a), nh=Math.floor(n/2)+1;
+  const f=new Float64Array(nh), A=new Float64Array(nh);
+  for(let k=0;k<nh;k++){f[k]=k/(n*dt);A[k]=Math.hypot(re[k],im[k])*dt;}
+  return {f,A};
+}
+
+// ---- default options (same as the MATLAB v4 settings block)
+const DEFAULT_OPT={pre_event_s:0, baseline_order:1, taper_s:1, filter_type:'bandpass',
+  fc_low:0.1, fc_high:25, order:4, causal:false, pad:true, integration:'linear', disp_poly_order:0};
+
+// ---- validate settings; returns error string or null
+function checkOptions(opt, dt){
+  const nyq=0.5/dt;
+  if(opt.filter_type!=='none'){
+    if(!(opt.fc_low>0&&opt.fc_low<nyq)) return `fc_low must be > 0 and below Nyquist (${nyq.toFixed(3)} Hz).`;
+    if(opt.filter_type==='bandpass'&&!(opt.fc_high>opt.fc_low&&opt.fc_high<nyq))
+      return `fc_high must be above fc_low and below Nyquist (${nyq.toFixed(3)} Hz).`;
+    if(!(opt.order>=1&&Number.isInteger(opt.order))) return 'Filter order must be a positive integer.';
+  }
+  if(!(opt.taper_s>=0)) return 'Taper length must be ≥ 0.';
+  if(!(opt.pre_event_s>=0)) return 'Pre-event length must be ≥ 0.';
+  return null;
+}
+
+// ---- main processing. accIn in cm/s², uniform dt. Returns cm/s², cm/s, cm.
+function processGM(accIn, dt, optIn){
+  const opt={...DEFAULT_OPT,...optIn};
+  const n=accIn.length;
+  if(n<10) throw new Error('Need at least 10 samples.');
+  const err=checkOptions(opt,dt); if(err) throw new Error(err);
+  const fs=1/dt;
+  let acc=Float64Array.from(accIn);
+
+  // 2. mean removal (pre-event mean or whole record)
+  const npre=Math.round(opt.pre_event_s/dt);
+  const m0=npre>=10?mean(acc.subarray(0,Math.min(npre,n))):mean(acc);
+  for(let i=0;i<n;i++) acc[i]-=m0;
+
+  // 3. least-squares polynomial baseline on acceleration (skipped with pre-event mean)
+  if(opt.baseline_order>=0&&npre<10){
+    const tm=(n-1)*dt/2; let sd=0;
+    for(let i=0;i<n;i++) sd+=(i*dt-tm)**2;
+    sd=Math.sqrt(sd/(n-1));
+    const x=new Float64Array(n); for(let i=0;i<n;i++) x[i]=(i*dt-tm)/sd;
+    const cols=[]; for(let k=0;k<=opt.baseline_order;k++) cols.push(x.map(v=>v**k));
+    const c=lstsq(cols,acc);
+    for(let i=0;i<n;i++){let s=0;for(let k=0;k<c.length;k++)s+=c[k]*cols[k][i];acc[i]-=s;}
+  }
+
+  // 4. cosine taper
+  const m=Math.min(Math.round(opt.taper_s/dt),Math.floor(n/2));
+  if(m>1) for(let i=0;i<m;i++){const w=0.5*(1-Math.cos(Math.PI*i/m));acc[i]*=w;acc[n-1-i]*=w;}
+
+  // 5. zero pads (Boore 2005): total 1.5·order/fc, split between both ends
+  const useFilter=opt.filter_type!=='none';
+  const npad=(useFilter&&opt.pad)?Math.ceil(0.5*1.5*opt.order/opt.fc_low/dt):0;
+  let ap=new Float64Array(n+2*npad); ap.set(acc,npad);
+
+  // 6. Butterworth (second-order sections), causal or forward-backward
+  if(useFilter){
+    const sos=butterSOS(opt.order,opt.filter_type,opt.fc_low,opt.fc_high,fs);
+    ap=sosfilt(sos,ap);
+    if(!opt.causal){ap.reverse();ap=sosfilt(sos,ap);ap.reverse();}
+  }
+
+  // 7. integrate the padded record from rest
+  let {v:vp,d:dp}=integrateAcc(ap,dt,opt.integration);
+
+  // 8. optional displacement-polynomial correction (t^2..t^N), applied to acc
+  if(opt.disp_poly_order>=2){
+    const np=ap.length, T=(np-1)*dt, s=new Float64Array(np);
+    for(let i=0;i<np;i++) s[i]=i/(np-1);
+    const pw=[]; for(let k=2;k<=opt.disp_poly_order;k++) pw.push(k);
+    const c=lstsq(pw.map(k=>s.map(v=>v**k)),dp);
+    for(let i=0;i<np;i++){let corr=0;pw.forEach((k,j)=>{corr+=c[j]*k*(k-1)*s[i]**(k-2);});ap[i]-=corr/(T*T);}
+    ({v:vp,d:dp}=integrateAcc(ap,dt,opt.integration));
+  }
+
+  // remove pads (after integration)
+  const A=ap.slice(npad,npad+n), V=vp.slice(npad,npad+n), D=dp.slice(npad,npad+n);
+  const pk=x=>{let mx=0,im=0;for(let i=0;i<x.length;i++){const a=Math.abs(x[i]);if(a>mx){mx=a;im=i;}}return [mx,im*dt];};
+  const [PGA,tPGA]=pk(A),[PGV,tPGV]=pk(V),[PGD,tPGD]=pk(D);
+  const fas=fourierAmp(A,dt);
+  // drift diagnostics on last 10 %
+  const nt=Math.max(10,Math.round(0.1*n));
+  const tt=new Float64Array(nt).map((_,i)=>i*dt), tail=D.slice(n-nt);
+  const cl=lstsq([new Float64Array(nt).fill(1),tt],tail);
+  return {acc:A,vel:V,dis:D,dt,npad,PGA,tPGA,PGV,tPGV,PGD,tPGD,freq:fas.f,FAS:fas.A,
+    diag:{v_end:V[n-1],d_end:D[n-1],d_tail_slope:cl[1],v_start:V[0],d_start:D[0]},opt};
+}
+function mean(x){let s=0;for(let i=0;i<x.length;i++)s+=x[i];return s/x.length;}
+
+
+// ══════════════════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════════════════
+const S={
+  files:[],      // [{name, acc:Float64Array (cm/s²), dt, units}]
+  sel:-1,        // selected record index
+  res:null,      // {f, R, R0, sweep}
+};
+const UNIT_K={'g':980.665,'cm/s2':1,'m/s2':100,'mm/s2':0.1};
+const C_A='#0000b3',C_V='#cc0000',C_D='#006600',C_RAW='#a9b1c2';
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ══════════════════════════════════════════════════════════════════════
+//  TABS
+// ══════════════════════════════════════════════════════════════════════
+function switchTab(idx){
+  document.querySelectorAll('#panel .tab-btn').forEach((b,i)=>b.classList.toggle('active',i===idx));
+  document.querySelectorAll('#panel .tab-pane').forEach((p,i)=>p.classList.toggle('active',i===idx));
+}
+function switchPlot(idx){
+  document.querySelectorAll('.plot-tabs .tab-btn').forEach((b,i)=>b.classList.toggle('active',i===idx));
+  document.querySelectorAll('.plot-view').forEach((p,i)=>p.classList.toggle('active',i===idx));
+  document.querySelectorAll(`#pv${idx} .plot-div`).forEach(d=>Plotly.Plots.resize(d));
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  FILE PARSER  (plain columns, AFAD/ESM .asc headers, PEER .AT2)
+// ══════════════════════════════════════════════════════════════════════
+function parseRaw(text){
+  const lines=text.replace(/\r/g,'').split('\n');
+  const meta={};
+  // PEER NGA .AT2: "NPTS=  7990, DT=   .0050 SEC" then 5 values per row, units g
+  const at2=text.match(/NPTS\s*=\s*(\d+)\s*,\s*DT\s*=\s*([0-9.Ee+-]+)/i);
+  const dataLineRe=/^[\s\d+\-.,;eE]+$/;
+  const rows=[]; let nc=0; const flat=[];
+  for(const line of lines){
+    const L=line.trim();
+    if(!L) continue;
+    const kv=L.match(/^([A-Za-z_/^0-9\-]+)\s*:\s*(.*)$/);
+    if(kv){meta[kv[1].toUpperCase()]=kv[2].trim();continue;}
+    if(L.includes(':')||!dataLineRe.test(L)) continue;
+    const nums=L.split(/[\s,;]+/).filter(s=>s.length).map(Number);
+    if(!nums.length||nums.some(v=>!isFinite(v))) continue;
+    if(at2){flat.push(...nums);continue;}
+    if(nc===0) nc=nums.length;
+    if(nums.length===nc) rows.push(nums);
+  }
+  if(at2){
+    const npts=parseInt(at2[1]);
+    return {rows:flat.slice(0,npts).map(v=>[v]),ncols:1,dt:parseFloat(at2[2]),units:'g',fmt:'PEER .AT2'};
+  }
+  const out={rows,ncols:nc,dt:null,units:null,fmt:'text'};
+  const dtKey=['SAMPLING_INTERVAL_S','DT','SAMPLING_INTERVAL'].find(k=>meta[k]&&isFinite(parseFloat(meta[k])));
+  if(dtKey){out.dt=parseFloat(meta[dtKey]);out.fmt='header';}
+  if(meta.UNITS){
+    const u=meta.UNITS.toLowerCase().replace(/\s/g,'');
+    if(/^cm\/s(\^?2|²)$/.test(u)||u==='gal') out.units='cm/s2';
+    else if(/^m\/s(\^?2|²)$/.test(u)) out.units='m/s2';
+    else if(/^mm\/s(\^?2|²)$/.test(u)) out.units='mm/s2';
+    else if(u==='g') out.units='g';
+  }
+  return out;
+}
+// uniform-grid check of a candidate time column (same rule as the MATLAB v4)
+function timeColumnDt(rows,j){
+  const n=rows.length; if(n<10) return null;
+  const t0=rows[0][j], dt=(rows[n-1][j]-t0)/(n-1);
+  if(!(dt>0)) return null;
+  for(let i=1;i<n;i++){
+    if(rows[i][j]<=rows[i-1][j]) return null;
+    if(Math.abs(rows[i][j]-(t0+i*dt))>0.25*dt) return null;
+  }
+  return dt;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  MODAL
+// ══════════════════════════════════════════════════════════════════════
+let _modalResolve=null,_modalRaw=null;
+function showModal(fname,parsed){
+  return new Promise(res=>{
+    _modalResolve=res;_modalRaw=parsed;
+    document.getElementById('modal-fname').textContent='File Settings — '+fname;
+    const n=Math.min(5,parsed.rows.length);
+    let h='<thead><tr>'+parsed.rows[0].map((_,j)=>`<th>Col ${j+1}</th>`).join('')+'</tr></thead><tbody>';
+    for(let r=0;r<n;r++) h+='<tr>'+parsed.rows[r].map(v=>`<td>${v}</td>`).join('')+'</tr>';
+    document.getElementById('prev-tbl').innerHTML=h+'</tbody>';
+
+    const nc=parsed.ncols;
+    parsed.tdt=[];for(let j=0;j<nc;j++) parsed.tdt.push(nc>1?timeColumnDt(parsed.rows,j):null);
+    const tc=document.getElementById('m-timecol');
+    tc.innerHTML='<option value="-1">None — use dt</option>'+
+      parsed.rows[0].map((_,j)=>`<option value="${j}">Col ${j+1}</option>`).join('');
+    const guessT=parsed.tdt.findIndex(v=>v!==null);
+    tc.value=String(nc>1&&guessT>=0?guessT:-1);
+    document.getElementById('m-timecol-row').style.display=nc>1?'':'none';
+
+    let accOpts=parsed.rows[0].map((_,j)=>`<option value="${j}">Col ${j+1}</option>`).join('');
+    if(nc>2) accOpts+='<option value="all">All columns (except time) — one record each</option>';
+    const ac=document.getElementById('m-acccol'); ac.innerHTML=accOpts;
+    ac.value=String(nc>1?(guessT===0?1:0):0);
+    document.getElementById('m-acccol-row').style.display=nc>1?'':'none';
+
+    if(parsed.dt) document.getElementById('m-dt').value=parsed.dt;
+    if(parsed.units) document.getElementById('m-units').value=parsed.units;
+    const msg=[];
+    if(parsed.fmt==='PEER .AT2') msg.push('PEER .AT2 detected: dt and units (g) read from header.');
+    else{
+      if(parsed.dt) msg.push(`dt = ${parsed.dt} s read from header.`);
+      if(parsed.units) msg.push(`Units ${parsed.units} read from header.`);
+    }
+    if(!parsed.units) msg.push('⚠ Units not found in file — check them!');
+    const md=document.getElementById('m-detect');
+    md.textContent=msg.join(' '); md.className='info '+(parsed.units?'ok':'warn');
+    onTimeColChange();
+    document.getElementById('file-modal').classList.add('open');
+  });
+}
+function onTimeColChange(){
+  const j=parseInt(document.getElementById('m-timecol').value);
+  const inp=document.getElementById('m-dt'), note=document.getElementById('m-dt-note');
+  if(j>=0){
+    const dt=_modalRaw.tdt[j];
+    if(dt){inp.value=+dt.toPrecision(8);inp.disabled=true;note.textContent='from time column';note.style.color='#1a7a36';}
+    else{inp.disabled=false;note.textContent='⚠ column is not a uniform time vector';note.style.color='#b81c1c';}
+  } else {inp.disabled=false;note.textContent='required';note.style.color='#888';}
+}
+function confirmModal(){
+  const tj=parseInt(document.getElementById('m-timecol').value);
+  if(tj>=0&&!_modalRaw.tdt[tj]){alert('The selected time column is not uniformly sampled (gaps, repeats or reordering). Choose "None" and enter dt, or resample the file.');return;}
+  const dt=parseFloat(document.getElementById('m-dt').value)||0;
+  if(dt<=0){alert('Please enter a valid time step dt > 0.');return;}
+  const units=document.getElementById('m-units').value;
+  const av=document.getElementById('m-acccol').value;
+  let cols;
+  if(_modalRaw.ncols===1) cols=[0];
+  else if(av==='all'){cols=[];for(let j=0;j<_modalRaw.ncols;j++) if(j!==tj) cols.push(j);}
+  else cols=[parseInt(av)];
+  if(cols.includes(tj)){alert('The acceleration column cannot be the time column.');return;}
+  document.getElementById('file-modal').classList.remove('open');
+  if(_modalResolve){_modalResolve({dt,units,cols});_modalResolve=null;}
+}
+function cancelModal(){
+  document.getElementById('file-modal').classList.remove('open');
+  if(_modalResolve){_modalResolve(null);_modalResolve=null;}
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  ADD / REMOVE FILES
+// ══════════════════════════════════════════════════════════════════════
+function addFiles(){document.getElementById('file-inp').click();}
+async function onFiles(){
+  const files=Array.from(document.getElementById('file-inp').files);
+  for(const f of files){
+    const parsed=parseRaw(await f.text());
+    if(parsed.rows.length<10){alert('No usable numeric data in '+f.name);continue;}
+    const sel=await showModal(f.name,parsed);
+    if(!sel) continue;
+    const k=UNIT_K[sel.units], base=f.name.replace(/\.[^.]+$/,'');
+    sel.cols.forEach(j=>{
+      const acc=Float64Array.from(parsed.rows,r=>r[j]*k);
+      S.files.push({name:sel.cols.length>1||parsed.ncols>1?`${base} [Col ${j+1}]`:base,acc,dt:sel.dt,units:sel.units});
+    });
+    if(S.sel<0) S.sel=S.files.length-1;
+  }
+  document.getElementById('file-inp').value='';
+  refreshTable();
+}
+function refreshTable(){
+  document.getElementById('file-body').innerHTML=S.files.map((f,i)=>`
+    <tr class="${i===S.sel?'sel-row':''}" onclick="selectRow(${i})" style="cursor:pointer;">
+      <td><input type="radio" name="rec" ${i===S.sel?'checked':''}></td>
+      <td title="${esc(f.name)}" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.name)}</td>
+      <td style="font-family:monospace;">${+f.dt.toPrecision(6)}</td>
+      <td style="font-family:monospace;">${f.acc.length}</td>
+      <td style="font-size:10px;">${f.units}</td>
+    </tr>`).join('');
+  const el=document.getElementById('file-status');
+  if(!S.files.length){el.textContent='No files loaded.';el.className='info warn';}
+  else{el.textContent=`✔ ${S.files.length} record(s) loaded — click a row to select it.`;el.className='info ok';}
+}
+function selectRow(i){S.sel=i;refreshTable();}
+function removeSelected(){
+  if(S.sel<0) return;
+  S.files.splice(S.sel,1);
+  S.sel=S.files.length?Math.min(S.sel,S.files.length-1):-1;
+  refreshTable();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════════════════════════════════
+function onFilterTypeChange(){
+  const t=document.getElementById('o-ft').value;
+  document.getElementById('row-f2').style.display=t==='bandpass'?'':'none';
+}
+function readOptions(){
+  const num=id=>parseFloat(document.getElementById(id).value);
+  return {
+    baseline_order:parseInt(document.getElementById('o-bo').value),
+    pre_event_s:num('o-pre')||0,
+    taper_s:num('o-taper'),
+    filter_type:document.getElementById('o-ft').value,
+    fc_low:num('o-f1'), fc_high:num('o-f2'),
+    order:num('o-order'),
+    causal:document.getElementById('o-causal').value==='1',
+    pad:document.getElementById('o-pad').checked,
+    integration:document.getElementById('o-int').value,
+    disp_poly_order:parseInt(document.getElementById('o-dpo').value),
+  };
+}
+function resetDefaults(){
+  const set=(id,v)=>document.getElementById(id).value=v;
+  set('o-bo','1');set('o-pre',0);set('o-taper',1);set('o-ft','bandpass');set('o-f1',0.1);set('o-f2',25);
+  set('o-order',4);set('o-causal','0');set('o-int','linear');set('o-dpo','0');
+  set('o-sweep','0.03, 0.05, 0.07, 0.1, 0.15, 0.2');
+  document.getElementById('o-pad').checked=true;
+  onFilterTypeChange();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  COMPUTE
+// ══════════════════════════════════════════════════════════════════════
+function compute(){
+  const status=document.getElementById('comp-status');
+  if(!S.files.length){status.textContent='⚠ Load a record first.';status.className='info err';switchTab(0);return;}
+  if(S.sel<0) S.sel=0;
+  const f=S.files[S.sel], opt=readOptions();
+  const err=checkOptions(opt,f.dt);
+  if(err){status.textContent='⚠ '+err;status.className='info err';alert(err);return;}
+  status.textContent='Processing…';status.className='info warn';
+  setTimeout(()=>{
+    try{
+      const R=processGM(f.acc,f.dt,opt);
+      const R0=processGM(f.acc,f.dt,{...opt,baseline_order:-1,pre_event_s:0,filter_type:'none',taper_s:0,disp_poly_order:0});
+      const fcs=document.getElementById('o-sweep').value.split(/[\s,;]+/).map(Number)
+        .filter(v=>v>0&&v<0.5/f.dt&&(opt.filter_type!=='bandpass'||v<opt.fc_high));
+      const sweep=opt.filter_type==='none'?[]:fcs.map(fc=>{const r=processGM(f.acc,f.dt,{...opt,fc_low:fc});return {fc,PGV:r.PGV,PGD:r.PGD};});
+      S.res={f,R,R0,sweep,opt};
+      plotAll(); showResults();
+      status.textContent=`✔ ${f.name}: PGA ${R.PGA.toFixed(2)} cm/s², PGV ${R.PGV.toFixed(2)} cm/s, PGD ${R.PGD.toFixed(2)} cm`;
+      status.className='info ok';
+    }catch(e){status.textContent='⚠ '+e.message;status.className='info err';}
+  },30);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  RESULTS PANEL
+// ══════════════════════════════════════════════════════════════════════
+function showResults(){
+  const {R,sweep,opt,f}=S.res;
+  document.getElementById('res-empty').style.display='none';
+  document.getElementById('res-body').style.display='';
+  const row=(k,v,u,t)=>`<tr><td><b>${k}</b></td><td class="num"><span class="res-big">${v}</span> ${u}</td><td class="num">${t}</td></tr>`;
+  document.getElementById('res-peaks').innerHTML=
+    row('PGA',R.PGA.toFixed(3),'cm/s²',R.tPGA.toFixed(3))+
+    `<tr><td></td><td class="num">${(R.PGA/980.665).toFixed(4)} g</td><td></td></tr>`+
+    row('PGV',R.PGV.toFixed(3),'cm/s',R.tPGV.toFixed(3))+
+    row('PGD',R.PGD.toFixed(3),'cm',R.tPGD.toFixed(3));
+  const d=R.diag;
+  document.getElementById('res-diag').innerHTML=
+    `<tr><td>Final velocity</td><td class="num">${d.v_end.toFixed(3)} cm/s</td></tr>`+
+    `<tr><td>Tail displacement slope</td><td class="num">${d.d_tail_slope.toFixed(4)} cm/s</td></tr>`+
+    `<tr><td>Final displacement</td><td class="num">${d.d_end.toFixed(3)} cm</td></tr>`;
+  const drift=Math.abs(d.d_tail_slope)>0.05*Math.max(R.PGV,1e-9)||Math.abs(d.v_end)>0.05*Math.max(R.PGV,1e-9);
+  const dm=document.getElementById('res-drift-msg');
+  dm.textContent=drift?'⚠ Residual drift in velocity/displacement — consider a higher fc or the displacement drift fix.'
+                      :'✔ No significant drift at the end of the record.';
+  dm.className='info '+(drift?'warn':'ok');
+  document.getElementById('res-sweep').innerHTML=sweep.length?sweep.map(s=>{
+    const cur=Math.abs(s.fc-opt.fc_low)<1e-12;
+    return `<tr class="${cur?'sel-row':''}"><td>${s.fc}${cur?' ◀':''}</td><td class="num">${s.PGV.toFixed(2)}</td><td class="num">${s.PGD.toFixed(2)}</td></tr>`;
+  }).join(''):'<tr><td colspan="3" style="color:#888;">Filter is off — no sweep.</td></tr>';
+  document.getElementById('res-settings').textContent=settingsText(opt,f);
+}
+function settingsText(o,f){
+  const flt=o.filter_type==='none'?'no filter':
+    `${o.causal?'causal':'acausal'} Butterworth ${o.filter_type} ${o.fc_low}${o.filter_type==='bandpass'?'–'+o.fc_high:''} Hz, order ${o.order}, pads ${o.pad?'on':'off'}`;
+  const bl=o.pre_event_s>0?`pre-event mean (${o.pre_event_s} s)`:(o.baseline_order<0?'mean removal':`polynomial order ${o.baseline_order}`);
+  return `${f.name} | dt ${f.dt} s | baseline: ${bl} | taper ${o.taper_s} s | ${flt} | integration ${o.integration}`+
+    (o.disp_poly_order?` | disp. drift fix t²…t^${o.disp_poly_order}`:'');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  PLOTS
+// ══════════════════════════════════════════════════════════════════════
+const FONT={family:'IBM Plex Sans'};
+const AXSTYLE={gridcolor:'#e5e8f0',zeroline:false,titlefont:FONT,tickfont:FONT};
+function lay(title,xl,yl,extra={}){
+  return {title:{text:title,font:{...FONT,size:12}},xaxis:{...AXSTYLE,title:xl},yaxis:{...AXSTYLE,title:yl,zeroline:true,zerolinecolor:'#ccc'},
+    margin:{l:62,r:16,t:32,b:40},plot_bgcolor:'white',paper_bgcolor:'#f4f6fb',font:FONT,
+    showlegend:true,legend:{font:{...FONT,size:10},x:1,xanchor:'right',y:1,bgcolor:'rgba(255,255,255,.7)'},...extra};
+}
+const CFG={responsive:true,displaylogo:false};
+function plotAll(){
+  const {R,R0,f}=S.res, n=R.acc.length;
+  const t=Float64Array.from({length:n},(_,i)=>i*f.dt);
+  const tr=(y,name,color,w=1)=>({x:t,y,type:'scattergl',mode:'lines',name,line:{color,width:w}});
+  const rawAcc=f.acc;
+  const xr={xaxis:{...AXSTYLE,title:'Time  (s)',range:[0,t[n-1]]}};
+  Plotly.react('plt-acc',[tr(rawAcc,'original',C_RAW),tr(R.acc,'corrected',C_A)],
+    lay(`Acceleration — PGA = ${R.PGA.toFixed(2)} cm/s² (${(R.PGA/980.665).toFixed(3)} g)`,'Time  (s)','a  (cm/s²)',xr),CFG);
+  Plotly.react('plt-vel',[tr(R0.vel,'mean removal only',C_RAW),tr(R.vel,'corrected',C_V,1.3)],
+    lay(`Velocity — PGV = ${R.PGV.toFixed(2)} cm/s`,'Time  (s)','v  (cm/s)',xr),CFG);
+  Plotly.react('plt-dis',[tr(R0.dis,'mean removal only',C_RAW),tr(R.dis,'corrected',C_D,1.5)],
+    lay(`Displacement — PGD = ${R.PGD.toFixed(2)} cm`,'Time  (s)','d  (cm)',
+      {...xr,yaxis:{...AXSTYLE,title:'d  (cm)',zeroline:true,zerolinecolor:'#ccc',range:padRange(R.dis,R0.dis)}}),CFG);
+
+  // Fourier: log-log overlay + linear original / filtered (0–50 Hz, same y-scale)
+  const fq=Array.from(R.freq).slice(1), A0=Array.from(R0.FAS).slice(1), A1=Array.from(R.FAS).slice(1);
+  const nyq=0.5/f.dt, fmax=Math.min(50,nyq);
+  Plotly.react('plt-fas-log',[
+    {x:fq,y:A0,type:'scattergl',mode:'lines',name:'mean removal only',line:{color:C_RAW,width:1}},
+    {x:fq,y:A1,type:'scattergl',mode:'lines',name:'corrected',line:{color:'#111',width:1}}],
+    lay('Fourier amplitude spectrum (log-log)','Frequency  (Hz)','FAS  (cm/s)',{
+      xaxis:{...AXSTYLE,title:'Frequency  (Hz)',type:'log',range:[Math.log10(0.01),Math.log10(nyq)]},
+      yaxis:{...AXSTYLE,title:'FAS  (cm/s)',type:'log'}}),CFG);
+  let ymax=1e-12; R0.freq.forEach((v,i)=>{if(v<=fmax){ymax=Math.max(ymax,R0.FAS[i],R.FAS[i]);}});
+  const linAx={xaxis:{...AXSTYLE,title:'Frequency  (Hz)',range:[0,fmax]},yaxis:{...AXSTYLE,title:'FAS  (cm/s)',range:[0,1.05*ymax]},showlegend:false};
+  Plotly.react('plt-fas-orig',[{x:Array.from(R0.freq),y:Array.from(R0.FAS),type:'scattergl',mode:'lines',line:{color:'#0000ff',width:1.2}}],
+    lay('Original acceleration (mean removed) — frequency spectrum','','',linAx),CFG);
+  Plotly.react('plt-fas-filt',[{x:Array.from(R.freq),y:Array.from(R.FAS),type:'scattergl',mode:'lines',line:{color:'#ff0000',width:1.2}}],
+    lay('Filtered acceleration — frequency spectrum','','',linAx),CFG);
+}
+// keep the corrected displacement readable even if the uncorrected one drifts far away
+function padRange(d,d0){
+  let mn=0,mx=0; d.forEach(v=>{mn=Math.min(mn,v);mx=Math.max(mx,v);});
+  let mn0=mn,mx0=mx; d0.forEach(v=>{mn0=Math.min(mn0,v);mx0=Math.max(mx0,v);});
+  const span=Math.max(mx-mn,1e-9);
+  if(mx0-mn0>5*span) return [mn-0.3*span,mx+0.3*span];   // uncorrected is clipped
+  const s0=Math.max(mx0-mn0,1e-9); return [mn0-0.05*s0,mx0+0.05*s0];
+}
+function clearPlots(){
+  ['plt-acc','plt-vel','plt-dis','plt-fas-log','plt-fas-orig','plt-fas-filt'].forEach(id=>Plotly.purge(id));
+  S.res=null; initPlots();
+  document.getElementById('comp-status').textContent='';
+  document.getElementById('res-empty').style.display='';document.getElementById('res-body').style.display='none';
+}
+function initPlots(){
+  const empty=(id,title,xl,yl,msg)=>Plotly.react(id,[],{...lay(title,xl,yl),showlegend:false,
+    annotations:[{x:0.5,y:0.5,xref:'paper',yref:'paper',text:msg,font:{size:12,color:'#aaa'},showarrow:false}]},CFG);
+  empty('plt-acc','Acceleration','Time  (s)','a  (cm/s²)','Load a record and click Process');
+  empty('plt-vel','Velocity','Time  (s)','v  (cm/s)','');
+  empty('plt-dis','Displacement','Time  (s)','d  (cm)','');
+  empty('plt-fas-log','Fourier amplitude spectrum (log-log)','Frequency  (Hz)','FAS  (cm/s)','Load a record and click Process');
+  empty('plt-fas-orig','Original acceleration — frequency spectrum','Frequency  (Hz)','FAS  (cm/s)','');
+  empty('plt-fas-filt','Filtered acceleration — frequency spectrum','Frequency  (Hz)','FAS  (cm/s)','');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  EXPORT
+// ══════════════════════════════════════════════════════════════════════
+function download(text,name){
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([text],{type:'text/csv'})),download:name});
+  a.click();
+}
+function exportTH(){
+  if(!S.res){alert('No results to export. Process a record first.');return;}
+  const {R,f,opt}=S.res;
+  let csv=`# ${settingsText(opt,f)}\n# PGA=${R.PGA.toFixed(6)} cm/s2, PGV=${R.PGV.toFixed(6)} cm/s, PGD=${R.PGD.toFixed(6)} cm\n`;
+  csv+='time_s,acc_original_cms2,acc_corrected_cms2,vel_cms,disp_cm\n';
+  for(let i=0;i<R.acc.length;i++) csv+=`${(i*f.dt).toFixed(5)},${f.acc[i].toExponential(6)},${R.acc[i].toExponential(6)},${R.vel[i].toExponential(6)},${R.dis[i].toExponential(6)}\n`;
+  download(csv,f.name.replace(/[^\w.-]+/g,'_')+'_processed.csv');
+}
+function exportFAS(){
+  if(!S.res){alert('No results to export. Process a record first.');return;}
+  const {R,R0,f,opt}=S.res;
+  let csv=`# ${settingsText(opt,f)}\n# FAS = |FFT(acc)|*dt  (cm/s)\nfreq_Hz,FAS_original_cms,FAS_corrected_cms\n`;
+  for(let i=0;i<R.freq.length;i++) csv+=`${R.freq[i].toFixed(6)},${R0.FAS[i].toExponential(6)},${R.FAS[i].toExponential(6)}\n`;
+  download(csv,f.name.replace(/[^\w.-]+/g,'_')+'_FAS.csv');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════════════════
+initPlots();
+</script>
+</body>
+</html>
