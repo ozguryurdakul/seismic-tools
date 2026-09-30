@@ -304,6 +304,31 @@ function switchTab(idx,btn){
 // ══════════════════════════════════════════════════════════════════════
 //  FILE PARSER
 // ══════════════════════════════════════════════════════════════════════
+// Check if column j is a uniform time vector → return dt or null
+function timeColumnDt(rows, j){
+  const n=rows.length; if(n<10) return null;
+  const t0=rows[0][j], dt=(rows[n-1][j]-t0)/(n-1);
+  if(!(dt>0)) return null;
+  for(let i=1;i<n;i++){
+    if(rows[i][j]<=rows[i-1][j]) return null;
+    if(Math.abs(rows[i][j]-(t0+i*dt))>0.25*dt) return null;
+  }
+  return parseFloat(dt.toFixed(10));
+}
+
+// Check uniformity and return max deviation ratio (for warning)
+function timeColumnUniformity(rows, j){
+  const n=rows.length; if(n<2) return 0;
+  const dt=(rows[n-1][j]-rows[0][j])/(n-1);
+  if(!(dt>0)) return Infinity;
+  let maxDev=0;
+  for(let i=1;i<n;i++){
+    const dev=Math.abs(rows[i][j]-rows[i-1][j]-dt)/dt;
+    if(dev>maxDev) maxDev=dev;
+  }
+  return maxDev;
+}
+
 function parseRaw(text){
   const dataLineRe=/^[\s\d+\-.,eE]+$/;
   const lines=text.replace(/\r/g,'').split('\n');
@@ -372,20 +397,63 @@ function showModal(fname, parsed){
     for(let r=0;r<n;r++) h+='<tr>'+parsed.rows[r].map(v=>`<td>${v}</td>`).join('')+'</tr>';
     document.getElementById('prev-tbl').innerHTML=h+'</tbody>';
 
-    // Auto-fill dt: from header if found, else default (single-col → 0.005, multi-col → 0.01)
-    const defaultDt = parsed.ncols===1 ? 0.005 : 0.01;
-    document.getElementById('m-dt').value = parsed.dt || defaultDt;
-
     // Auto-fill units if detected from header
     if(parsed.units) document.getElementById('m-units').value = parsed.units;
 
-    // Show detected info
-    const hints=[];
-    if(parsed.dt) hints.push(`✔ dt = ${parsed.dt} s read from header`);
-    else hints.push(`⚠ dt not found — using default ${defaultDt} s`);
-    if(parsed.units) hints.push(`✔ units = ${parsed.units} read from header`);
+    const hints=[], warnings=[];
+    let detectedDt=null, dtSource='';
+
+    if(parsed.ncols===1){
+      // Single column — no time column possible
+      detectedDt = parsed.dt || 0.005;
+      dtSource = parsed.dt ? `header (${parsed.dt} s)` : 'default (0.005 s)';
+      if(parsed.dt) hints.push(`✔ dt = ${parsed.dt} s read from header`);
+      else hints.push(`⚠ dt not found — using default 0.005 s`);
+    } else {
+      // Multi-column — try to find time column
+      const tDts=parsed.rows[0].map((_,j)=>timeColumnDt(parsed.rows,j));
+      const tCol=tDts.findIndex(v=>v!==null);
+
+      if(tCol>=0){
+        // Found a uniform time column
+        detectedDt=tDts[tCol];
+        dtSource=`time column (Col ${tCol+1})`;
+        hints.push(`✔ dt = ${detectedDt} s computed from Col ${tCol+1} (time column)`);
+
+        // Check uniformity warning threshold (>1%)
+        const dev=timeColumnUniformity(parsed.rows,tCol);
+        if(dev>0.01) warnings.push(`⚠ Time column Col ${tCol+1} has max spacing deviation of ${(dev*100).toFixed(1)}% — may not be perfectly uniform`);
+
+      } else {
+        // No time column found — try header then default
+        detectedDt = parsed.dt || 0.01;
+        if(parsed.dt){
+          dtSource=`header (${parsed.dt} s)`;
+          hints.push(`✔ dt = ${parsed.dt} s read from header`);
+        } else {
+          dtSource='default (0.01 s)';
+          hints.push(`⚠ No time column or header dt found — using default 0.01 s`);
+        }
+
+        // Check if any column was close to uniform but failed the 25% threshold
+        parsed.rows[0].forEach((_,j)=>{
+          const dev=timeColumnUniformity(parsed.rows,j);
+          if(dev>0&&dev<=1) warnings.push(`⚠ Col ${j+1} looks like a time column but spacing is non-uniform (max deviation ${(dev*100).toFixed(1)}%) — check dt manually`);
+        });
+      }
+
+      if(parsed.units) hints.push(`✔ units = ${parsed.units} read from header`);
+    }
+
+    document.getElementById('m-dt').value = detectedDt;
+
     const hintEl=document.getElementById('m-dt-hint');
-    if(hintEl) hintEl.textContent=hints.join('   ');
+    if(hintEl){
+      const allMsgs=[...hints,...warnings];
+      hintEl.innerHTML=allMsgs.map((m,i)=>
+        `<span style="color:${i>=hints.length?'#cc0000':'#1a7a36'}">${m}</span>`
+      ).join('<br>');
+    }
 
     // Column options
     const opts=parsed.rows[0].map((_,j)=>`<option value="${j}">Col ${j+1}</option>`).join('');
