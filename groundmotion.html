@@ -194,6 +194,7 @@ input[type=checkbox]{accent-color:var(--blue);}
         <span class="lbl bold fix">High cut-off (Hz):</span>
         <input type="number" id="o-f2" class="w70" value="25" min="0.1" step="1">
       </div>
+      <div class="hint" id="hint-f2">Must be below Nyquist = 1/(2·dt), e.g. 25 Hz for dt = 0.02 s. If it is not, it is lowered to 0.8·Nyquist automatically.</div>
       <div class="row">
         <span class="lbl bold fix">Order (per pass):</span>
         <input type="number" id="o-order" class="w50" value="4" min="1" max="12" step="1">
@@ -768,7 +769,7 @@ function removeSelected(){
 // ══════════════════════════════════════════════════════════════════════
 function onFilterTypeChange(){
   const t=document.getElementById('o-ft').value;
-  document.getElementById('row-f2').style.display=t==='bandpass'?'':'none';
+  ['row-f2','hint-f2'].forEach(id=>document.getElementById(id).style.display=t==='bandpass'?'':'none');
 }
 function readOptions(){
   const num=id=>parseFloat(document.getElementById(id).value);
@@ -802,6 +803,15 @@ function compute(){
   if(!S.files.length){status.textContent='⚠ Load a record first.';status.className='info err';switchTab(0);return;}
   if(S.sel<0) S.sel=0;
   const f=S.files[S.sel], opt=readOptions();
+  // Band-pass corner at/above Nyquist (e.g. default 25 Hz with dt = 0.02 s):
+  // lower it to 0.8·Nyquist instead of stopping, and say so.
+  let adjNote='';
+  const nyq=0.5/f.dt;
+  if(opt.filter_type==='bandpass'&&opt.fc_high>=nyq&&opt.fc_low<0.8*nyq){
+    const fh=+(0.8*nyq).toPrecision(4);
+    adjNote=` — high cut-off lowered from ${opt.fc_high} to ${fh} Hz (Nyquist = ${+nyq.toPrecision(4)} Hz for dt = ${f.dt} s)`;
+    opt.fc_high=fh; document.getElementById('o-f2').value=fh;
+  }
   const err=checkOptions(opt,f.dt);
   if(err){status.textContent='⚠ '+err;status.className='info err';alert(err);return;}
   status.textContent='Processing…';status.className='info warn';
@@ -814,8 +824,8 @@ function compute(){
       const sweep=opt.filter_type==='none'?[]:fcs.map(fc=>{const r=processGM(f.acc,f.dt,{...opt,fc_low:fc});return {fc,PGV:r.PGV,PGD:r.PGD};});
       S.res={f,R,R0,sweep,opt};
       plotAll(); showResults();
-      status.textContent=`✔ ${f.name}: PGA ${R.PGA.toFixed(2)} cm/s², PGV ${R.PGV.toFixed(2)} cm/s, PGD ${R.PGD.toFixed(2)} cm`;
-      status.className='info ok';
+      status.textContent=`✔ ${f.name}: PGA ${R.PGA.toFixed(2)} cm/s², PGV ${R.PGV.toFixed(2)} cm/s, PGD ${R.PGD.toFixed(2)} cm`+adjNote;
+      status.className='info '+(adjNote?'warn':'ok');
     }catch(e){status.textContent='⚠ '+e.message;status.className='info err';}
   },30);
 }
