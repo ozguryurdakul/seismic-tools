@@ -159,8 +159,8 @@ input[type=checkbox]{accent-color:var(--blue);}
 
     <!-- TAB 2: Processing -->
     <div class="tab-pane" id="t2">
-      <div class="note">Defaults match SeismoSignal's default processing: linear baseline +
-        Butterworth band-pass 0.1–25 Hz, order 4. <b>PGD depends strongly on the low cut-off</b> —
+      <div class="note">Defaults: linear baseline + Butterworth band-pass 0.1–25 Hz, order 4
+        (SeismoSignal's default filter settings). <b>PGD depends strongly on the low cut-off</b> —
         always check the fc sweep on the Results tab.</div>
 
       <div class="sep">Baseline Correction (on acceleration)</div>
@@ -317,6 +317,7 @@ input[type=checkbox]{accent-color:var(--blue);}
       <div class="field-row">
         <label>Acceleration units</label>
         <select class="modal-sel" id="m-units">
+          <option value="" disabled>— select —</option>
           <option value="cm/s2">cm/s²</option>
           <option value="m/s2">m/s²</option>
           <option value="mm/s2">mm/s²</option>
@@ -686,15 +687,16 @@ function showModal(fname,parsed){
     ac.value=String(nc>1?(guessT===0?1:0):0);
     document.getElementById('m-acccol-row').style.display=nc>1?'':'none';
 
-    if(parsed.dt) document.getElementById('m-dt').value=parsed.dt;
-    if(parsed.units) document.getElementById('m-units').value=parsed.units;
+    // never carry dt / units over from the previous file: detected value or empty
+    document.getElementById('m-dt').value=parsed.dt||'';
+    document.getElementById('m-units').value=parsed.units||'';
     const msg=[];
     if(parsed.fmt==='PEER .AT2') msg.push('PEER .AT2 detected: dt and units (g) read from header.');
     else{
       if(parsed.dt) msg.push(`dt = ${parsed.dt} s read from header.`);
       if(parsed.units) msg.push(`Units ${parsed.units} read from header.`);
     }
-    if(!parsed.units) msg.push('⚠ Units not found in file — check them!');
+    if(!parsed.units) msg.push('⚠ Units not found in the file — please select them.');
     const md=document.getElementById('m-detect');
     md.textContent=msg.join(' '); md.className='info '+(parsed.units?'ok':'warn');
     onTimeColChange();
@@ -716,6 +718,7 @@ function confirmModal(){
   const dt=parseFloat(document.getElementById('m-dt').value)||0;
   if(dt<=0){alert('Please enter a valid time step dt > 0.');return;}
   const units=document.getElementById('m-units').value;
+  if(!units){alert('Please select the acceleration units (cm/s², m/s², mm/s² or g).');return;}
   const av=document.getElementById('m-acccol').value;
   let cols;
   if(_modalRaw.ncols===1) cols=[0];
@@ -723,7 +726,8 @@ function confirmModal(){
   else cols=[parseInt(av)];
   if(cols.includes(tj)){alert('The acceleration column cannot be the time column.');return;}
   document.getElementById('file-modal').classList.remove('open');
-  if(_modalResolve){_modalResolve({dt,units,cols});_modalResolve=null;}
+  const t0=tj>=0?_modalRaw.rows[0][tj]:0;
+  if(_modalResolve){_modalResolve({dt,units,cols,t0});_modalResolve=null;}
 }
 function cancelModal(){
   document.getElementById('file-modal').classList.remove('open');
@@ -744,7 +748,8 @@ async function onFiles(){
     const k=UNIT_K[sel.units], base=f.name.replace(/\.[^.]+$/,'');
     sel.cols.forEach(j=>{
       const acc=Float64Array.from(parsed.rows,r=>r[j]*k);
-      S.files.push({name:sel.cols.length>1||parsed.ncols>1?`${base} [Col ${j+1}]`:base,acc,dt:sel.dt,units:sel.units});
+      const nAcc=parsed.ncols-(parsed.tdt&&parsed.tdt.some(v=>v!==null)?1:0);
+      S.files.push({name:nAcc>1?`${base} [Col ${j+1}]`:base,acc,dt:sel.dt,units:sel.units,t0:sel.t0});
     });
     if(S.sel<0) S.sel=S.files.length-1;
   }
@@ -818,7 +823,7 @@ function compute(){
   if(opt.filter_type==='bandpass'&&opt.fc_high>=nyq&&opt.fc_low<0.8*nyq){
     const fh=+(0.8*nyq).toPrecision(4);
     adjNote=` — high cut-off lowered from ${opt.fc_high} to ${fh} Hz (Nyquist = ${+nyq.toPrecision(4)} Hz for dt = ${f.dt} s)`;
-    opt.fc_high=fh; document.getElementById('o-f2').value=fh;
+    opt.fc_high=fh;
   }
   const err=checkOptions(opt,f.dt);
   if(err){status.textContent='⚠ '+err;status.className='info err';alert(err);return;}
@@ -827,7 +832,7 @@ function compute(){
     try{
       const R=processGM(f.acc,f.dt,opt);
       const R0=processGM(f.acc,f.dt,{...opt,baseline_order:-1,pre_event_s:0,filter_type:'none',taper_s:0,disp_poly_order:0});
-      const fcs=document.getElementById('o-sweep').value.split(/[\s,;]+/).map(Number)
+      const fcs=[...new Set(document.getElementById('o-sweep').value.split(/[\s,;]+/).filter(v=>v!=='').map(Number).concat(opt.fc_low))].sort((a,b)=>a-b)
         .filter(v=>v>0&&v<0.5/f.dt&&(opt.filter_type!=='bandpass'||v<opt.fc_high));
       const sweep=opt.filter_type==='none'?[]:fcs.map(fc=>{const r=processGM(f.acc,f.dt,{...opt,fc_low:fc});return {fc,PGV:r.PGV,PGD:r.PGD};});
       S.res={f,R,R0,sweep,opt};
@@ -847,10 +852,10 @@ function showResults(){
   document.getElementById('res-body').style.display='';
   const row=(k,v,u,t)=>`<tr><td><b>${k}</b></td><td class="num"><span class="res-big">${v}</span> ${u}</td><td class="num">${t}</td></tr>`;
   document.getElementById('res-peaks').innerHTML=
-    row('PGA',R.PGA.toFixed(3),'cm/s²',R.tPGA.toFixed(3))+
+    row('PGA',R.PGA.toFixed(3),'cm/s²',(f.t0+R.tPGA).toFixed(3))+
     `<tr><td></td><td class="num">${(R.PGA/980.665).toFixed(4)} g</td><td></td></tr>`+
-    row('PGV',R.PGV.toFixed(3),'cm/s',R.tPGV.toFixed(3))+
-    row('PGD',R.PGD.toFixed(3),'cm',R.tPGD.toFixed(3));
+    row('PGV',R.PGV.toFixed(3),'cm/s',(f.t0+R.tPGV).toFixed(3))+
+    row('PGD',R.PGD.toFixed(3),'cm',(f.t0+R.tPGD).toFixed(3));
   const d=R.diag;
   document.getElementById('res-diag').innerHTML=
     `<tr><td>Final velocity</td><td class="num">${d.v_end.toFixed(3)} cm/s</td></tr>`+
@@ -888,10 +893,11 @@ function lay(title,xl,yl,extra={}){
 const CFG={responsive:true,displaylogo:false};
 function plotAll(){
   const {R,R0,f}=S.res, n=R.acc.length;
-  const t=Float64Array.from({length:n},(_,i)=>i*f.dt);
-  const tr=(y,name,color,w=1)=>({x:t,y,type:'scattergl',mode:'lines',name,line:{color,width:w}});
+  const t=Float64Array.from({length:n},(_,i)=>f.t0+i*f.dt);
+  const TR=n>30000?'scattergl':'scatter';
+  const tr=(y,name,color,w=1)=>({x:t,y,type:TR,mode:'lines',name,line:{color,width:w}});
   const rawAcc=f.acc;
-  const xr={xaxis:{...AXSTYLE,title:'Time  (s)',range:[0,t[n-1]]}};
+  const xr={xaxis:{...AXSTYLE,title:'Time  (s)',range:[t[0],t[n-1]]}};
   Plotly.react('plt-acc',[tr(rawAcc,'original',C_RAW),tr(R.acc,'corrected',C_A)],
     lay(`Acceleration — PGA = ${R.PGA.toFixed(2)} cm/s² (${(R.PGA/980.665).toFixed(3)} g)`,'Time  (s)','a  (cm/s²)',xr),CFG);
   Plotly.react('plt-vel',[tr(R0.vel,'mean removal only',C_RAW),tr(R.vel,'corrected',C_V,1.3)],
@@ -904,16 +910,16 @@ function plotAll(){
   const fq=Array.from(R.freq).slice(1), A0=Array.from(R0.FAS).slice(1), A1=Array.from(R.FAS).slice(1);
   const nyq=0.5/f.dt, fmax=Math.min(50,nyq);
   Plotly.react('plt-fas-log',[
-    {x:fq,y:A0,type:'scattergl',mode:'lines',name:'mean removal only',line:{color:C_RAW,width:1}},
-    {x:fq,y:A1,type:'scattergl',mode:'lines',name:'corrected',line:{color:'#111',width:1}}],
+    {x:fq,y:A0,type:'scatter',mode:'lines',name:'mean removal only',line:{color:C_RAW,width:1}},
+    {x:fq,y:A1,type:'scatter',mode:'lines',name:'corrected',line:{color:'#111',width:1}}],
     lay('Fourier amplitude spectrum (log-log)','Frequency  (Hz)','FAS  (cm/s)',{
       xaxis:{...AXSTYLE,title:'Frequency  (Hz)',type:'log',range:[Math.log10(0.01),Math.log10(nyq)]},
       yaxis:{...AXSTYLE,title:'FAS  (cm/s)',type:'log'}}),CFG);
   let ymax=1e-12; R0.freq.forEach((v,i)=>{if(v<=fmax){ymax=Math.max(ymax,R0.FAS[i],R.FAS[i]);}});
   const linAx={xaxis:{...AXSTYLE,title:'Frequency  (Hz)',range:[0,fmax]},yaxis:{...AXSTYLE,title:'FAS  (cm/s)',range:[0,1.05*ymax]},showlegend:false};
-  Plotly.react('plt-fas-orig',[{x:Array.from(R0.freq),y:Array.from(R0.FAS),type:'scattergl',mode:'lines',line:{color:'#0000ff',width:1.2}}],
+  Plotly.react('plt-fas-orig',[{x:Array.from(R0.freq),y:Array.from(R0.FAS),type:'scatter',mode:'lines',line:{color:'#0000ff',width:1.2}}],
     lay('Original acceleration (mean removed) — frequency spectrum','','',linAx),CFG);
-  Plotly.react('plt-fas-filt',[{x:Array.from(R.freq),y:Array.from(R.FAS),type:'scattergl',mode:'lines',line:{color:'#ff0000',width:1.2}}],
+  Plotly.react('plt-fas-filt',[{x:Array.from(R.freq),y:Array.from(R.FAS),type:'scatter',mode:'lines',line:{color:'#ff0000',width:1.2}}],
     lay('Filtered acceleration — frequency spectrum','','',linAx),CFG);
 }
 // keep the corrected displacement readable even if the uncorrected one drifts far away
@@ -953,7 +959,7 @@ function exportTH(){
   const {R,f,opt}=S.res;
   let csv=`# ${settingsText(opt,f)}\n# PGA=${R.PGA.toFixed(6)} cm/s2, PGV=${R.PGV.toFixed(6)} cm/s, PGD=${R.PGD.toFixed(6)} cm\n`;
   csv+='time_s,acc_original_cms2,acc_corrected_cms2,vel_cms,disp_cm\n';
-  for(let i=0;i<R.acc.length;i++) csv+=`${(i*f.dt).toFixed(5)},${f.acc[i].toExponential(6)},${R.acc[i].toExponential(6)},${R.vel[i].toExponential(6)},${R.dis[i].toExponential(6)}\n`;
+  for(let i=0;i<R.acc.length;i++) csv+=`${(f.t0+i*f.dt).toFixed(5)},${f.acc[i].toExponential(6)},${R.acc[i].toExponential(6)},${R.vel[i].toExponential(6)},${R.dis[i].toExponential(6)}\n`;
   download(csv,f.name.replace(/[^\w.-]+/g,'_')+'_processed.csv');
 }
 function exportFAS(){
