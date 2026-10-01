@@ -254,6 +254,12 @@ input[type=checkbox]{accent-color:var(--blue);}
           <thead><tr><th></th><th style="text-align:right;">Value</th><th style="text-align:right;">at t (s)</th></tr></thead>
           <tbody id="res-peaks"></tbody>
         </table>
+        <div class="sep">Processing Steps (why correction matters)</div>
+        <table class="res-tbl" style="margin-bottom:4px;">
+          <thead><tr><th>Step</th><th style="text-align:right;">PGV (cm/s)</th><th style="text-align:right;">PGD (cm)</th></tr></thead>
+          <tbody id="res-steps"></tbody>
+        </table>
+        <div class="hint">Each row adds one step to the row above it. Only the last row is the result.</div>
         <div class="sep">Drift Checks</div>
         <table class="res-tbl" style="margin-bottom:4px;"><tbody id="res-diag"></tbody></table>
         <div id="res-drift-msg" class="info"></div>
@@ -282,6 +288,13 @@ input[type=checkbox]{accent-color:var(--blue);}
   <div class="plot-tabs">
     <button class="tab-btn active" onclick="switchPlot(0,this)">Time Histories</button>
     <button class="tab-btn" onclick="switchPlot(1,this)">Fourier Spectrum</button>
+    <div id="curve-sel" style="margin-left:auto;padding:6px 14px;display:flex;align-items:center;gap:12px;font-size:12px;">
+      <span class="lbl bold">Show:</span>
+      <label><input type="checkbox" data-step="0" checked onchange="if(S.res)plotAll()"> 1 Raw</label>
+      <label><input type="checkbox" data-step="1" checked onchange="if(S.res)plotAll()"> 2 Mean removed</label>
+      <label><input type="checkbox" data-step="2" onchange="if(S.res)plotAll()"> 3 + Baseline &amp; taper</label>
+      <label><input type="checkbox" data-step="3" checked onchange="if(S.res)plotAll()"> 4 Corrected</label>
+    </div>
   </div>
   <div class="plot-view active" id="pv0">
     <div class="plot-div" id="plt-acc"></div>
@@ -835,7 +848,17 @@ function compute(){
       const fcs=[...new Set(document.getElementById('o-sweep').value.split(/[\s,;]+/).filter(v=>v!=='').map(Number).concat(opt.fc_low))].sort((a,b)=>a-b)
         .filter(v=>v>0&&v<0.5/f.dt&&(opt.filter_type!=='bandpass'||v<opt.fc_high));
       const sweep=opt.filter_type==='none'?[]:fcs.map(fc=>{const r=processGM(f.acc,f.dt,{...opt,fc_low:fc});return {fc,PGV:r.PGV,PGD:r.PGD};});
-      S.res={f,R,R0,sweep,opt};
+      const raw=integrateAcc(f.acc,f.dt,opt.integration);
+      const R1=processGM(f.acc,f.dt,{...opt,filter_type:'none',disp_poly_order:0});
+      const pk=x=>{let m=0;for(const v of x)m=Math.max(m,Math.abs(v));return m;};
+      const bl=opt.pre_event_s>0?`pre-event mean (${opt.pre_event_s} s)`:(opt.baseline_order<0?'no polynomial':`polynomial order ${opt.baseline_order}`);
+      const steps=[
+        ['1. Raw record (no correction)',pk(raw.v),pk(raw.d)],
+        ['2. Mean removed',R0.PGV,R0.PGD],
+        [`3. + baseline (${bl}) + taper`,R1.PGV,R1.PGD],
+        [opt.filter_type==='none'?'4. No filter (= result)':`4. + ${opt.filter_type} filter (= result)`,R.PGV,R.PGD]];
+      S.res={f,R,R0,sweep,opt,steps,
+        th:[{acc:f.acc,vel:raw.v,dis:raw.d},{acc:R0.acc,vel:R0.vel,dis:R0.dis},{acc:R1.acc,vel:R1.vel,dis:R1.dis},{acc:R.acc,vel:R.vel,dis:R.dis}]};
       plotAll(); showResults();
       status.textContent=`✔ ${f.name}: PGA ${R.PGA.toFixed(2)} cm/s², PGV ${R.PGV.toFixed(2)} cm/s, PGD ${R.PGD.toFixed(2)} cm`+adjNote;
       status.className='info '+(adjNote?'warn':'ok');
@@ -871,6 +894,8 @@ function showResults(){
     return `<tr class="${cur?'sel-row':''}"><td>${s.fc}${cur?' ◀':''}</td><td class="num">${s.PGV.toFixed(2)}</td><td class="num">${s.PGD.toFixed(2)}</td></tr>`;
   }).join(''):'<tr><td colspan="3" style="color:#888;">Filter is off — no sweep.</td></tr>';
   document.getElementById('res-settings').textContent=settingsText(opt,f);
+  const st=S.res.steps;
+  document.getElementById('res-steps').innerHTML=st.map((r,i)=>`<tr class="${i===st.length-1?'sel-row':''}"><td>${i===st.length-1?'<b>'+r[0]+'</b>':r[0]}</td><td class="num">${r[1].toFixed(2)}</td><td class="num">${i===st.length-1?'<b>'+r[2].toFixed(2)+'</b>':r[2].toFixed(1)}</td></tr>`).join('');
 }
 function settingsText(o,f){
   const flt=o.filter_type==='none'?'no filter':
@@ -896,15 +921,29 @@ function plotAll(){
   const t=Float64Array.from({length:n},(_,i)=>f.t0+i*f.dt);
   const TR=n>30000?'scattergl':'scatter';
   const tr=(y,name,color,w=1)=>({x:t,y,type:TR,mode:'lines',name,line:{color,width:w}});
-  const rawAcc=f.acc;
   const xr={xaxis:{...AXSTYLE,title:'Time  (s)',range:[t[0],t[n-1]]}};
-  Plotly.react('plt-acc',[tr(rawAcc,'original',C_RAW),tr(R.acc,'corrected',C_A)],
-    lay(`Acceleration — PGA = ${R.PGA.toFixed(2)} cm/s² (${(R.PGA/980.665).toFixed(3)} g)`,'Time  (s)','a  (cm/s²)',xr),CFG);
-  Plotly.react('plt-vel',[tr(R0.vel,'mean removal only',C_RAW),tr(R.vel,'corrected',C_V,1.3)],
-    lay(`Velocity — PGV = ${R.PGV.toFixed(2)} cm/s`,'Time  (s)','v  (cm/s)',xr),CFG);
-  Plotly.react('plt-dis',[tr(R0.dis,'mean removal only',C_RAW),tr(R.dis,'corrected',C_D,1.5)],
-    lay(`Displacement — PGD = ${R.PGD.toFixed(2)} cm`,'Time  (s)','d  (cm)',
-      {...xr,yaxis:{...AXSTYLE,title:'d  (cm)',zeroline:true,zerolinecolor:'#ccc',range:padRange(R.dis,R0.dis)}}),CFG);
+  const on=[...document.querySelectorAll('#curve-sel input')].map(c=>c.checked);
+  const NAMES=['1 raw','2 mean removed','3 + baseline & taper','4 corrected'];
+  const GREYS=['#c9ced8','#8e97aa','#e08a00'];
+  const draw=(id,key,color,title,yl)=>{
+    const traces=[], ys=[];
+    // y-range: fit the corrected curve when shown; curves far outside it are clipped and marked
+    const main=on[3]?S.res.th[3][key]:null;
+    let lo=Infinity,hi=-Infinity;
+    (main?[main]:S.res.th.filter((_,k)=>on[k]).map(h=>h[key])).forEach(y=>y.forEach(v=>{lo=Math.min(lo,v);hi=Math.max(hi,v);}));
+    if(!isFinite(lo)){lo=-1;hi=1;}
+    const span=Math.max(hi-lo,1e-9), rng=[lo-0.08*span,hi+0.08*span];
+    S.res.th.forEach((h,k)=>{
+      if(!on[k]) return;
+      const y=h[key]; let mx=0; y.forEach(v=>mx=Math.max(mx,Math.abs(v)));
+      const off=main&&k!==3&&(Math.max(...[rng[1],-rng[0]])*1.5<mx);
+      traces.push(tr(y,NAMES[k]+(off?` (off-scale, max ${mx.toPrecision(3)})`:''),k===3?color:GREYS[k],k===3?1.4:1));
+    });
+    Plotly.react(id,traces,lay(title,'Time  (s)',yl,{...xr,yaxis:{...AXSTYLE,title:yl,zeroline:true,zerolinecolor:'#ccc',range:rng}}),CFG);
+  };
+  draw('plt-acc','acc',C_A,`Acceleration — PGA = ${R.PGA.toFixed(2)} cm/s² (${(R.PGA/980.665).toFixed(3)} g)`,'a  (cm/s²)');
+  draw('plt-vel','vel',C_V,`Velocity — PGV = ${R.PGV.toFixed(2)} cm/s`,'v  (cm/s)');
+  draw('plt-dis','dis',C_D,`Displacement — PGD = ${R.PGD.toFixed(2)} cm`,'d  (cm)');
 
   // Fourier: log-log overlay + linear original / filtered (0–50 Hz, same y-scale)
   const fq=Array.from(R.freq).slice(1), A0=Array.from(R0.FAS).slice(1), A1=Array.from(R.FAS).slice(1);
@@ -956,17 +995,26 @@ function download(text,name){
 }
 function exportTH(){
   if(!S.res){alert('No results to export. Process a record first.');return;}
-  const {R,f,opt}=S.res;
+  const {R,f,opt,steps,th}=S.res, K=['raw','mean','baseline','corrected'];
   let csv=`# ${settingsText(opt,f)}\n# PGA=${R.PGA.toFixed(6)} cm/s2, PGV=${R.PGV.toFixed(6)} cm/s, PGD=${R.PGD.toFixed(6)} cm\n`;
-  csv+='time_s,acc_original_cms2,acc_corrected_cms2,vel_cms,disp_cm\n';
-  for(let i=0;i<R.acc.length;i++) csv+=`${(f.t0+i*f.dt).toFixed(5)},${f.acc[i].toExponential(6)},${R.acc[i].toExponential(6)},${R.vel[i].toExponential(6)},${R.dis[i].toExponential(6)}\n`;
+  csv+='# Steps 1-3 are shown for teaching only. The processed result is the *_corrected columns (step 4).\n';
+  steps.forEach(s=>csv+=`# ${s[0]}: PGV=${s[1].toFixed(4)} cm/s, PGD=${s[2].toFixed(4)} cm\n`);
+  csv+='# units: acc cm/s2, vel cm/s, disp cm\ntime_s,'+K.map(k=>`acc_${k},vel_${k},disp_${k}`).join(',')+'\n';
+  for(let i=0;i<R.acc.length;i++){
+    csv+=(f.t0+i*f.dt).toFixed(5);
+    for(const h of th) csv+=`,${h.acc[i].toExponential(6)},${h.vel[i].toExponential(6)},${h.dis[i].toExponential(6)}`;
+    csv+='\n';
+  }
   download(csv,f.name.replace(/[^\w.-]+/g,'_')+'_processed.csv');
 }
 function exportFAS(){
   if(!S.res){alert('No results to export. Process a record first.');return;}
-  const {R,R0,f,opt}=S.res;
-  let csv=`# ${settingsText(opt,f)}\n# FAS = |FFT(acc)|*dt  (cm/s)\nfreq_Hz,FAS_original_cms,FAS_corrected_cms\n`;
-  for(let i=0;i<R.freq.length;i++) csv+=`${R.freq[i].toFixed(6)},${R0.FAS[i].toExponential(6)},${R.FAS[i].toExponential(6)}\n`;
+  const {R,f,opt,th}=S.res, K=['raw','mean','baseline','corrected'];
+  const F=th.map((h,k)=>k===3?R.FAS:fourierAmp(h.acc,f.dt).A);
+  let csv=`# ${settingsText(opt,f)}\n# FAS = |FFT(acc)|*dt  (cm/s)\n`;
+  csv+='# Steps 1-3 are shown for teaching only. The processed result is FAS_corrected (step 4).\n';
+  csv+='freq_Hz,'+K.map(k=>`FAS_${k}_cms`).join(',')+'\n';
+  for(let i=0;i<R.freq.length;i++) csv+=`${R.freq[i].toFixed(6)},`+F.map(A=>A[i].toExponential(6)).join(',')+'\n';
   download(csv,f.name.replace(/[^\w.-]+/g,'_')+'_FAS.csv');
 }
 
