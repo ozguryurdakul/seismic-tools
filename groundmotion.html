@@ -87,7 +87,7 @@ input[type=checkbox]{accent-color:var(--blue);}
 <div id="panel">
   <div id="hdr">
     <h1>〰 Ground Motion Processor — PGA · PGV · PGD</h1>
-    <p>GroundMotionGUI v1.0 · University of Pardubice · TA CR – SIGMA</p>
+    <p>GroundMotionGUI v1.1 · University of Pardubice · TA CR – SIGMA</p>
   </div>
 
   <div class="tab-bar">
@@ -998,6 +998,7 @@ function exportTH(){
   const {R,f,opt,steps,th}=S.res, K=['raw','mean','baseline','corrected'];
   let csv=`# ${settingsText(opt,f)}\n# PGA=${R.PGA.toFixed(6)} cm/s2, PGV=${R.PGV.toFixed(6)} cm/s, PGD=${R.PGD.toFixed(6)} cm\n`;
   csv+='# Steps 1-3 are shown for teaching only. The processed result is the *_corrected columns (step 4).\n';
+  csv+='# NOTE: SEISMOSIGNAL USES RAW OR MEAN-REMOVED VALUES (STEP 1 OR 2) UNLESS BASELINE CORRECTION / FILTERING IS APPLIED IN SEISMOSIGNAL.\n';
   steps.forEach(s=>csv+=`# ${s[0]}: PGV=${s[1].toFixed(4)} cm/s, PGD=${s[2].toFixed(4)} cm\n`);
   csv+='# units: acc cm/s2, vel cm/s, disp cm\ntime_s,'+K.map(k=>`acc_${k},vel_${k},disp_${k}`).join(',')+'\n';
   for(let i=0;i<R.acc.length;i++){
@@ -1013,6 +1014,7 @@ function exportFAS(){
   const F=th.map((h,k)=>k===3?R.FAS:fourierAmp(h.acc,f.dt).A);
   let csv=`# ${settingsText(opt,f)}\n# FAS = |FFT(acc)|*dt  (cm/s)\n`;
   csv+='# Steps 1-3 are shown for teaching only. The processed result is FAS_corrected (step 4).\n';
+  csv+='# NOTE: SEISMOSIGNAL USES RAW OR MEAN-REMOVED VALUES (STEP 1 OR 2) UNLESS BASELINE CORRECTION / FILTERING IS APPLIED IN SEISMOSIGNAL.\n';
   csv+='freq_Hz,'+K.map(k=>`FAS_${k}_cms`).join(',')+'\n';
   for(let i=0;i<R.freq.length;i++) csv+=`${R.freq[i].toFixed(6)},`+F.map(A=>A[i].toExponential(6)).join(',')+'\n';
   download(csv,f.name.replace(/[^\w.-]+/g,'_')+'_FAS.csv');
