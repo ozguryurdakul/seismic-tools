@@ -112,7 +112,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
 <div id="panel">
   <div id="hdr">
     <h1>⚡ Response Spectrum Scaling</h1>
-    <p>SpectraScalingGUI v2.2 · University of Pardubice</p>
+    <p>SpectraScalingGUI v2.3 · University of Pardubice</p>
   </div>
 
   <div id="std-bar">
@@ -399,43 +399,69 @@ function parseCSV(text) {
   const lines = text.replace(/^\uFEFF/,'').replace(/\r/g,'').split('\n').filter(l=>l.trim());
   if(!lines.length) throw new Error('Empty file');
 
+  // A field is numeric only if the WHOLE field is a number
+  // (Number('12abc') is NaN, unlike parseFloat), quotes stripped.
+  const clean = s => s.trim().replace(/^["']|["']$/g,'');
+  const isNum = s => { const c=clean(s); return c!=='' && isFinite(Number(c)); };
+
   // ---- Delimiter auto-detection -------------------------------------
-  // Try each candidate on a sample of lines and score by how many fields
-  // it yields consistently. Prevents silent single-column parses of
-  // semicolon- or whitespace-delimited files (European Excel, .asc, AT2).
-  const sample = lines.slice(0, Math.min(20, lines.length));
-  const cands  = [
-    {d:'\t',  re:/\t/},
-    {d:';',   re:/;/},
-    {d:',',   re:/,/},
-    {d:' ',   re:/\s+/}     // whitespace: split on runs
+  // Scored on numeric rows only, so header / metadata lines of any
+  // length cannot confuse it. The delimiter that yields the most
+  // all-numeric rows with >= 2 fields wins; ties go to more columns.
+  const cands = [
+    {d:'\t', re:/\t/},
+    {d:';',  re:/;/},
+    {d:',',  re:/,/},
+    {d:' ',  re:/\s+/}     // whitespace: split on runs
   ];
-  let best={d:',', re:/,/, nf:1};
+  const probe = lines.slice(0, Math.min(300, lines.length));
+  let best=null;
   for(const c of cands){
-    const counts = sample.map(l => l.trim().split(c.re).filter(s=>s!=='').length);
-    const nf = counts[0];
-    if(nf < 2) continue;                          // needs at least 2 fields
-    const consistent = counts.every(n => n === nf);
-    if(consistent && nf > best.nf) best = {...c, nf};
+    const split = l => l.trim().split(c.re).filter(s=>s.trim()!=='');
+    const nfs = probe.map(l=>{const f=split(l); return (f.length>=2 && f.every(isNum)) ? f.length : 0;})
+                     .filter(n=>n>0);
+    if(!nfs.length) continue;
+    // most common field count among numeric rows
+    const freq={}; nfs.forEach(n=>freq[n]=(freq[n]||0)+1);
+    const nf=+Object.keys(freq).sort((a,b)=>freq[b]-freq[a]||b-a)[0];
+    const score=freq[nf];
+    if(!best || score>best.score || (score===best.score && nf>best.nf)) best={...c, nf, score, split};
   }
-  const splitLine = l => l.trim().split(best.re).filter(s=>s!=='');
+  if(!best)
+    throw new Error('No numeric data rows found. Check the file format and delimiter.');
+  const splitLine = best.split;
+  const isDataRow = l => { const f=splitLine(l); return f.length>=best.nf && f.slice(0,best.nf).every(isNum); };
 
-  // ---- Header detection ---------------------------------------------
-  const first  = splitLine(lines[0]).map(s=>s.trim());
-  const hasHdr = isNaN(parseFloat(first[0]));
-  const colNames = hasHdr ? first : first.map((_,i)=>`Col ${i+1}`);
-  const dataLines = hasHdr ? lines.slice(1) : lines;
+  // ---- Header handling -------------------------------------------------
+  // Every line before the first data row is header and is skipped
+  // (any number of lines: titles, units, metadata). Column names come
+  // from the text-only lines directly above the data that have the same
+  // number of fields as the data. If there are two or more (e.g. a name
+  // row then a units row), they are combined: "Period (s)". Otherwise
+  // generic names (Col 1, Col 2, …) are used.
+  const dataStart = lines.findIndex(isDataRow);
+  const nSkipped  = dataStart;
+  let colNames = Array.from({length:best.nf},(_,i)=>`Col ${i+1}`);
+  const hdrRows = [];
+  for(let k=dataStart-1; k>=0; k--){
+    const h = splitLine(lines[k]).map(clean);
+    if(h.length===best.nf && h.every(x=>!isNum(x))) hdrRows.unshift(h); else break;
+  }
+  if(hdrRows.length){
+    colNames = hdrRows[0].map((n,i)=>{
+      const extra = hdrRows.slice(1).map(r=>r[i]).filter(Boolean);
+      return (n + (extra.length ? ` (${extra.join(', ')})` : '')) || `Col ${i+1}`;
+    });
+  }
 
-  const data = dataLines
-    .map(l => splitLine(l).map(s=>parseFloat(s.trim())))
-    .filter(r => r.length >= colNames.length && !isNaN(r[0]));
+  const data = lines.slice(dataStart)
+    .filter(isDataRow)
+    .map(l => splitLine(l).slice(0,best.nf).map(s=>Number(clean(s))));
 
   if(!data.length)
     throw new Error('No numeric data rows found. Check the file format and delimiter.');
-  if(colNames.length < 2)
-    throw new Error('Only one column detected. The file needs at least a period column and a spectral column.');
 
-  return { colNames, data };
+  return { colNames, data, nSkipped };
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -446,7 +472,8 @@ let _resolve=null, _parsed=null;
 function showModal(fname, parsed, showComp) {
   return new Promise(res => {
     _resolve=res; _parsed=parsed;
-    document.getElementById('modal-title').textContent = 'Column Selector – '+fname;
+    document.getElementById('modal-title').textContent = 'Column Selector – '+fname+
+      (parsed.nSkipped ? `   (${parsed.nSkipped} header line${parsed.nSkipped>1?'s':''} skipped)` : '');
     document.getElementById('comp-div').style.display = showComp?'':'none';
 
     // Preview
