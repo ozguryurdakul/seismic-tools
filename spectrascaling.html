@@ -56,7 +56,7 @@ body{font-family:'IBM Plex Sans',sans-serif;font-size:13px;color:var(--text);bac
 .lbl.bold{font-weight:600;color:var(--text);}
 input[type=number],select.sm{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:white;color:var(--text);}
 input[type=number]:focus,select.sm:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px rgba(26,79,170,.15);}
-.w50{width:54px;} .w70{width:68px;}
+.w50{width:54px;} .w60{width:62px;} .w70{width:68px;}
 .info{font-size:11px;margin-bottom:4px;}
 .ok{color:var(--green);} .warn{color:#7a4a00;} .err{color:var(--red);}
 
@@ -112,7 +112,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
 <div id="panel">
   <div id="hdr">
     <h1>⚡ Response Spectrum Scaling</h1>
-    <p>SpectraScalingGUI v2.3 · University of Pardubice</p>
+    <p>SpectraScalingGUI v3.0 · University of Pardubice</p>
   </div>
 
   <div id="std-bar">
@@ -138,17 +138,21 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
         <span><strong>TA CR – SIGMA / M.ERA-NET Cofund</strong><br>Technology Agency of the Czech Republic</span>
       </div>
       <div class="sep">Target Design Spectrum</div>
-      <button class="btn btn-blue" onclick="loadTarget()">📂  Load Target Spectrum from CSV…</button>
+      <button class="btn btn-blue" onclick="loadTarget()">📂  Load Target Spectrum (.csv / .txt)…</button>
       <div id="tgt-status" class="info warn">No target spectrum loaded.</div>
       <div id="tgt-file"   class="info" style="color:#666;"></div>
       <div id="tgt-cols"   class="info" style="color:#666;"></div>
 
       <div class="sep">Building Period</div>
       <div class="row">
-        <span class="lbl bold">T₁ (s) — required</span>
+        <span class="lbl bold">T₁ (s) — optional</span>
         <input type="number" id="T1" class="w70" value="0" min="0" step="0.1" onchange="onT1Change()" oninput="onT1Change()">
+        <label class="lbl" style="display:flex;align-items:center;gap:4px;cursor:pointer;margin-left:6px;"
+               title="Show or hide the T₁ line on the plot">
+          <input type="checkbox" id="showT1" checked onchange="redraw()"> Show on plot
+        </label>
       </div>
-      <div id="T1-info" class="info warn">⚠ Enter building period to show period markers.</div>
+      <div id="T1-info" class="info" style="color:#666;">Enter T₁ to pre-fill the window, or type T low / T high directly.</div>
 
       <div class="sep">Scaling Window  (pre-filled from T₁ — editable)</div>
       <div class="row" style="margin-bottom:3px;">
@@ -177,7 +181,6 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
         <input type="number" id="ymax" class="w50" value="3" min="0" step="0.1" oninput="applyAxis()" onchange="applyAxis()">
       </div>
       <div class="row">
-        <button class="btn btn-blue btn-inline" onclick="applyAxis()">Apply Limits</button>
         <button class="btn btn-outline btn-inline" onclick="resetAxis()">Reset to Auto</button>
       </div>
 
@@ -223,8 +226,8 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
     <div class="tab-pane" id="t2">
       <div class="sep">Ground Motion Records</div>
       <div class="info" style="color:#777;font-style:italic;margin-bottom:6px;">Each file: select T column, Sa column, and component (EW / NS / GM)</div>
-      <button class="btn btn-green" onclick="addFiles()">➕  Add CSV File(s)…</button>
-      <input type="file" id="file-inp" accept=".csv" multiple style="display:none" onchange="onFiles()">
+      <button class="btn btn-green" onclick="addFiles()">➕  Add Spectrum File(s)  (.csv / .txt)…</button>
+      <input type="file" id="file-inp" accept=".csv,.txt,.asc,.dat" multiple style="display:none" onchange="onFiles()">
       <button class="btn btn-red" onclick="removeSelected()">✖  Remove Selected Row</button>
 
       <div class="tbl-wrap">
@@ -252,7 +255,12 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
         those; this tool averages the spectra as loaded.
       </div>
 
-      <button class="btn btn-violet" id="btn-auto" onclick="autoScale()">⚡  Auto-Scale Factor (SF)  [0.2T₁ – 1.5T₁]</button>
+      <div id="ec8-note" class="info" style="font-size:10px;color:#7a4a00;margin-top:2px;display:none;">
+        EC8 also requires the mean zero-period spectral acceleration to be at least
+        a<sub>g</sub>·S. This tool does <b>not</b> check that condition.
+      </div>
+
+      <button class="btn btn-violet" id="btn-auto" onclick="autoScale()">⚡  Auto-Scale Factor (SF)  [T low – T high]</button>
 
       <div class="info" style="color:#666;font-style:italic;font-size:10px;margin:2px 0 4px;">
         α — optimised for highest R²,&nbsp; 0 = no SF control,&nbsp; higher = more uniform SFs
@@ -270,19 +278,20 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
       <div id="comp-badge" class="info"      style="font-size:11px;margin-top:4px;font-weight:600;"></div>
       <div id="nrec-badge" class="info"      style="font-size:11px;margin-top:3px;"></div>
       <div id="part-badge" class="info"      style="font-size:11px;margin-top:3px;"></div>
+      <div id="cov-badge"  class="info"      style="font-size:11px;margin-top:3px;"></div>
     </div>
 
     <!-- TAB 3 -->
     <div class="tab-pane" id="t3">
-      <div class="sep" id="comp-title">Compliance Check  [0.2T₁ – 1.5T₁]  (TBDY 2018)</div>
+      <div class="sep" id="comp-title">Compliance Check  [T low – T high]  (TBDY 2018)</div>
 
       <div class="sep">Summary</div>
       <table class="metrics"><tbody>
         <tr><td>Records loaded</td>   <td id="r-n">--</td></tr>
         <tr><td>Target spectrum</td>  <td id="r-tgt">--</td></tr>
         <tr><td>Building T₁ (s)</td> <td id="r-T1">--</td></tr>
-        <tr><td>0.2T₁ (s)</td>       <td id="r-02T">--</td></tr>
-        <tr><td>Upper T (s)</td>      <td id="r-upT">--</td></tr>
+        <tr><td>T low (s)</td>       <td id="r-02T">--</td></tr>
+        <tr><td>T high (s)</td>      <td id="r-upT">--</td></tr>
       </tbody></table>
 
       <div class="sep">Goodness of Fit  (mean vs target)</div>
@@ -301,10 +310,11 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
         <tr><td>Period at max deficiency</td> <td id="r-defT">--</td></tr>
       </tbody></table>
 
-      <div class="sep" id="lb-sep">TBDY 2018 §2.4 — Lower Bound on Mean Spectrum</div>
+      <div class="sep" id="lb-sep">TBDY 2018 — Lower Bound on Mean Spectrum</div>
       <table class="metrics"><tbody>
         <tr><td id="lbl-pass">Min(mean/target) ≥ threshold?</td><td id="r-pass">--</td></tr>
         <tr><td>Points failing bound</td><td id="r-fail">--</td></tr>
+        <tr><td>Periods checked</td><td id="r-npts">--</td></tr>
       </tbody></table>
 
       <div class="sep">Record Participation</div>
@@ -401,8 +411,11 @@ function parseCSV(text) {
 
   // A field is numeric only if the WHOLE field is a number
   // (Number('12abc') is NaN, unlike parseFloat), quotes stripped.
+  // When the delimiter is not a comma, a single decimal comma is accepted
+  // (European Excel export: "0,10;0,50").
   const clean = s => s.trim().replace(/^["']|["']$/g,'');
-  const isNum = s => { const c=clean(s); return c!=='' && isFinite(Number(c)); };
+  const mkNum = dc => s => { let c=clean(s); if(dc) c=c.replace(/^([^,]*),([^,]*)$/,'$1.$2');
+                             return c==='' ? NaN : Number(c); };
 
   // ---- Delimiter auto-detection -------------------------------------
   // Scored on numeric rows only, so header / metadata lines of any
@@ -418,19 +431,21 @@ function parseCSV(text) {
   let best=null;
   for(const c of cands){
     const split = l => l.trim().split(c.re).filter(s=>s.trim()!=='');
-    const nfs = probe.map(l=>{const f=split(l); return (f.length>=2 && f.every(isNum)) ? f.length : 0;})
+    const toNum = mkNum(c.d!==',');
+    const ok    = s => isFinite(toNum(s));
+    const nfs = probe.map(l=>{const f=split(l); return (f.length>=2 && f.every(ok)) ? f.length : 0;})
                      .filter(n=>n>0);
     if(!nfs.length) continue;
     // most common field count among numeric rows
     const freq={}; nfs.forEach(n=>freq[n]=(freq[n]||0)+1);
     const nf=+Object.keys(freq).sort((a,b)=>freq[b]-freq[a]||b-a)[0];
     const score=freq[nf];
-    if(!best || score>best.score || (score===best.score && nf>best.nf)) best={...c, nf, score, split};
+    if(!best || score>best.score || (score===best.score && nf>best.nf)) best={...c, nf, score, split, toNum, ok};
   }
   if(!best)
     throw new Error('No numeric data rows found. Check the file format and delimiter.');
   const splitLine = best.split;
-  const isDataRow = l => { const f=splitLine(l); return f.length>=best.nf && f.slice(0,best.nf).every(isNum); };
+  const isDataRow = l => { const f=splitLine(l); return f.length>=best.nf && f.slice(0,best.nf).every(best.ok); };
 
   // ---- Header handling -------------------------------------------------
   // Every line before the first data row is header and is skipped
@@ -445,7 +460,7 @@ function parseCSV(text) {
   const hdrRows = [];
   for(let k=dataStart-1; k>=0; k--){
     const h = splitLine(lines[k]).map(clean);
-    if(h.length===best.nf && h.every(x=>!isNum(x))) hdrRows.unshift(h); else break;
+    if(h.length===best.nf && h.every(x=>!best.ok(x))) hdrRows.unshift(h); else break;
   }
   if(hdrRows.length){
     colNames = hdrRows[0].map((n,i)=>{
@@ -456,12 +471,19 @@ function parseCSV(text) {
 
   const data = lines.slice(dataStart)
     .filter(isDataRow)
-    .map(l => splitLine(l).slice(0,best.nf).map(s=>Number(clean(s))));
+    .map(l => splitLine(l).slice(0,best.nf).map(best.toNum));
 
   if(!data.length)
     throw new Error('No numeric data rows found. Check the file format and delimiter.');
 
   return { colNames, data, nSkipped };
+}
+
+// Periods must increase for interpolation: drop non-numeric pairs and
+// sort by T (files written from long to short period are handled).
+function sortSpectrum(T,Sa){
+  const pr=T.map((t,i)=>[t,Sa[i]]).filter(([t,a])=>isFinite(t)&&isFinite(a)).sort((a,b)=>a[0]-b[0]);
+  return {T:pr.map(p=>p[0]), Sa:pr.map(p=>p[1])};
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -478,13 +500,13 @@ function showModal(fname, parsed, showComp) {
 
     // Preview
     const nPrev=Math.min(5,parsed.data.length);
-    let h='<thead><tr>'+parsed.colNames.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>';
+    let h='<thead><tr>'+parsed.colNames.map(c=>`<th>${esc(c)}</th>`).join('')+'</tr></thead><tbody>';
     for(let r=0;r<nPrev;r++)
       h+='<tr>'+parsed.data[r].map(v=>`<td>${isFinite(v)?v.toFixed(4):v}</td>`).join('')+'</tr>';
     document.getElementById('prev-tbl').innerHTML=h+'</tbody>';
 
     // Dropdowns
-    const opts=parsed.colNames.map((c,i)=>`<option value="${i}">${c}</option>`).join('');
+    const opts=parsed.colNames.map((c,i)=>`<option value="${i}">${esc(c)}</option>`).join('');
     document.getElementById('sel-T').innerHTML=opts;
     document.getElementById('sel-Sa').innerHTML=opts;
     if(parsed.colNames.length>1) document.getElementById('sel-Sa').value='1';
@@ -518,12 +540,12 @@ function cancelModal() {
 // ══════════════════════════════════════════════════════════════════════
 async function loadTarget() {
   const inp=document.createElement('input');
-  inp.type='file'; inp.accept='.csv';
+  inp.type='file'; inp.accept='.csv,.txt,.asc,.dat';
   inp.onchange=async e=>{
     const f=e.target.files[0]; if(!f) return;
     let p; try{p=parseCSV(await f.text());}catch(ex){alert(ex.message);return;}
     const sel=await showModal(f.name,p,false); if(!sel) return;
-    S.target={...sel, label:f.name.replace(/\.csv$/i,'')};
+    S.target={...sel, ...sortSpectrum(sel.T,sel.Sa), label:f.name.replace(/\.(csv|txt|asc|dat)$/i,'')};
     document.getElementById('tgt-status').textContent='✔ Target loaded:  '+S.target.label;
     document.getElementById('tgt-status').className='info ok';
     document.getElementById('tgt-file').textContent='File:  '+f.name;
@@ -537,39 +559,72 @@ async function loadTarget() {
 //  T1 + STANDARD
 // ══════════════════════════════════════════════════════════════════════
 function onT1Change() {
+  const prevT1 = S.T1;
   S.T1 = parseFloat(document.getElementById('T1').value) || 0;
   const isEC8 = S.standard === 'EC8';
   const m = isEC8 ? 2.0 : 1.5;
   const lb = isEC8 ? '2T₁' : '1.5T₁';
   const wT1el = document.getElementById('wT1');
   const wT2el = document.getElementById('wT2');
-  const wiEl  = document.getElementById('win-info');
 
+  // If a window field still holds the default computed from the PREVIOUS T₁,
+  // clear it so it follows the new T₁. Values the user typed are kept.
+  if (prevT1 > 0) {
+    if (parseFloat(wT1el.value) === +(0.2*prevT1).toFixed(3)) wT1el.value = '';
+    if (parseFloat(wT2el.value) === +(m  *prevT1).toFixed(3)) wT2el.value = '';
+  }
+
+  const info = document.getElementById('T1-info');
   if (S.T1 > 0) {
-    // Pre-fill window fields with the code default ONLY if they are currently
-    // empty — preserves any value the user has already typed manually.
     if (!wT1el.value) wT1el.value = (0.2 * S.T1).toFixed(3);
     if (!wT2el.value) wT2el.value = (m   * S.T1).toFixed(3);
+    info.textContent = `Code default:  0.2T₁ = ${(0.2*S.T1).toFixed(3)} s   ${lb} = ${(m*S.T1).toFixed(3)} s`;
+    info.className = 'info ok'; info.style.color = '';
+  } else {
+    info.textContent = 'Enter T₁ to pre-fill the window, or type T low / T high directly.';
+    info.className = 'info'; info.style.color = '#666';
+  }
+  refreshAll();
+}
 
-    document.getElementById('T1-info').textContent =
-      `Markers active:  0.2T₁ = ${(0.2*S.T1).toFixed(3)} s   ${lb} = ${(m*S.T1).toFixed(3)} s`;
-    document.getElementById('T1-info').className = 'info ok';
+// Window is usable when T low / T high (typed or pre-filled) form a valid range.
+function hasWindow(){
+  const w = getWindow();
+  return isFinite(w.T1) && isFinite(w.T2) && w.T1 >= 0 && w.T2 > w.T1;
+}
 
-    const lo = parseFloat(wT1el.value), hi = parseFloat(wT2el.value);
-    const defaultLo = +(0.2*S.T1).toFixed(3), defaultHi = +(m*S.T1).toFixed(3);
-    const custom = (lo !== defaultLo) || (hi !== defaultHi);
+function updateWinInfo(){
+  const wiEl = document.getElementById('win-info');
+  if(!wiEl) return;
+  const isEC8 = S.standard === 'EC8';
+  // Labels on the auto-scale button and Results title show the actual window
+  const w = getWindow(), ok = hasWindow();
+  const span = ok ? `${w.T1.toFixed(3)} – ${w.T2.toFixed(3)} s` : 'T low – T high';
+  document.getElementById('btn-auto').textContent = `⚡  Auto-Scale Factor (SF)  [${span}]`;
+  document.getElementById('comp-title').textContent =
+    `Compliance Check  [${span}]  (${isEC8 ? 'EC8' : 'TBDY 2018'})`;
+  const m = isEC8 ? 2.0 : 1.5, lb = isEC8 ? '2T₁' : '1.5T₁';
+  const lo = parseFloat(document.getElementById('wT1').value);
+  const hi = parseFloat(document.getElementById('wT2').value);
+  if (!isFinite(lo) || !isFinite(hi)) {
+    wiEl.textContent = '⚠ Enter T₁, or both T low and T high.';
+    wiEl.style.color = '#7a4a00'; return;
+  }
+  if (hi <= lo) {
+    wiEl.textContent = '⚠ T high must be greater than T low.';
+    wiEl.style.color = 'var(--red)'; return;
+  }
+  if (S.T1 > 0) {
+    const dLo = +(0.2*S.T1).toFixed(3), dHi = +(m*S.T1).toFixed(3);
+    const custom = (lo !== dLo) || (hi !== dHi);
     wiEl.textContent = custom
-      ? `Custom window: ${lo.toFixed(3)} – ${hi.toFixed(3)} s  (code default: ${defaultLo} – ${defaultHi})`
+      ? `Custom window: ${lo.toFixed(3)} – ${hi.toFixed(3)} s  (code default: ${dLo} – ${dHi})`
       : `Code default window: 0.2T₁ – ${lb}  =  ${lo.toFixed(3)} – ${hi.toFixed(3)} s`;
     wiEl.style.color = custom ? '#7a4a00' : '#555';
   } else {
-    wT1el.value = '';
-    wT2el.value = '';
-    document.getElementById('T1-info').textContent = '⚠ Enter building period to show period markers.';
-    document.getElementById('T1-info').className = 'info warn';
-    wiEl.textContent = '';
+    wiEl.textContent = `Custom window: ${lo.toFixed(3)} – ${hi.toFixed(3)} s  (no T₁ entered)`;
+    wiEl.style.color = '#555';
   }
-  refreshAll();
 }
 
 function onStandardChange() {
@@ -588,20 +643,16 @@ function onStandardChange() {
     if (parseFloat(wT1el.value) === oldLo) wT1el.value = '';
     if (parseFloat(wT2el.value) === oldHi) wT2el.value = '';
   }
-  document.getElementById('btn-auto').textContent=
-    isEC8?'⚡  Auto-Scale Factor (SF)  [0.2T₁ – 2T₁]':'⚡  Auto-Scale Factor (SF)  [0.2T₁ – 1.5T₁]';
   document.getElementById('thresh-lbl').style.display=isEC8?'none':'';
   document.getElementById('tbdy-thresh').style.display=isEC8?'none':'';
   document.getElementById('srss-note').style.display=isEC8?'none':'';
-  document.getElementById('comp-title').textContent=isEC8
-    ?'Compliance Check  [0.2T₁ – 2T₁]  (EC8 EN 1998-1:2004)'
-    :'Compliance Check  [0.2T₁ – 1.5T₁]  (TBDY 2018)';
+  document.getElementById('ec8-note').style.display=isEC8?'':'none';
   document.getElementById('lb-sep').textContent=isEC8
-    ?'EC8 §3.2.3.1.2(4)(c) — 90% Lower Bound'
-    :'TBDY 2018 §2.4 — Lower Bound on Mean Spectrum';
+    ?'EC8 — 90% Lower Bound'
+    :'TBDY 2018 — Lower Bound on Mean Spectrum';
   document.getElementById('nrec-sep').textContent=isEC8
-    ?'EC8 §3.2.3.1.2 / §4.3.3.4.3 — Minimum Number of Records'
-    :'TBDY 2018 §2.5.1 — Minimum Number of Record Sets';
+    ?'EC8 — Minimum Number of Records'
+    :'TBDY 2018 — Minimum Number of Record Sets';
   onT1Change();
 }
 
@@ -615,7 +666,7 @@ async function onFiles() {
   for(const f of files){
     let p; try{p=parseCSV(await f.text());}catch(ex){alert('Cannot read '+f.name+': '+ex.message);continue;}
     const sel=await showModal(f.name,p,true); if(!sel) continue;
-    S.records.push({name:f.name.replace(/\.csv$/i,''),T:sel.T,Sa:sel.Sa,SF:1,comp:sel.comp,Tcol:sel.Tcol,Sacol:sel.Sacol});
+    S.records.push({name:f.name.replace(/\.(csv|txt|asc|dat)$/i,''),...sortSpectrum(sel.T,sel.Sa),SF:1,comp:sel.comp,Tcol:sel.Tcol,Sacol:sel.Sacol});
   }
   document.getElementById('file-inp').value='';
   refreshTable(); updateRecStatus(); refreshAll();
@@ -625,7 +676,7 @@ function refreshTable(){
   document.getElementById('rec-body').innerHTML=S.records.map((r,i)=>`
     <tr>
       <td><input type="checkbox" class="rcb" data-i="${i}"></td>
-      <td title="${r.name}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.name}</td>
+      <td title="${esc(r.name)}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</td>
       <td><input type="number" value="${r.SF.toFixed(4)}" step="0.01" onchange="S.records[${i}].SF=+this.value"></td>
       <td>${r.comp}</td>
     </tr>`).join('');
@@ -636,6 +687,7 @@ function toggleAll(){ const c=document.getElementById('sel-all').checked; docume
 function removeSelected(){
   const rm=new Set([...document.querySelectorAll('.rcb:checked')].map(c=>+c.dataset.i));
   S.records=S.records.filter((_,i)=>!rm.has(i));
+  document.getElementById('sel-all').checked=false;
   refreshTable(); updateRecStatus(); refreshAll();
 }
 
@@ -646,7 +698,8 @@ function updateRecStatus(){
 }
 
 function applyManual(){
-  document.querySelectorAll("#rec-body input[type=number]").forEach((inp,i)=>{if(i<S.records.length)S.records[i].SF=+inp.value||1;});
+  document.querySelectorAll("#rec-body input[type=number]").forEach((inp,i)=>{
+    if(i<S.records.length){const v=parseFloat(inp.value); S.records[i].SF=(isFinite(v)&&v>=0)?v:1;}});
   refreshAll();
 }
 function resetSFs(){
@@ -659,6 +712,7 @@ function resetSFs(){
 // ══════════════════════════════════════════════════════════════════════
 //  MATH
 // ══════════════════════════════════════════════════════════════════════
+function esc(t){return String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function linspace(a,b,n){const s=(b-a)/(n-1);return Array.from({length:n},(_,i)=>a+i*s);}
 function dot(a,b){return a.reduce((s,v,i)=>s+v*b[i],0);}
 function mean(a){return a.reduce((s,v)=>s+v,0)/a.length;}
@@ -833,18 +887,29 @@ function computeR2(SFin,commonT,SaTgt,validTgt,SaInterp){
   return 1-av.reduce((s,v,i)=>s+(v-tv[i])**2,0)/tv.reduce((s,v)=>s+(v-mt)**2,0);
 }
 
+const num=(id,d)=>{const v=parseFloat(document.getElementById(id).value);return isFinite(v)?v:d;};
 function getThresh(){
-  return S.standard==='EC8'?0.90:(parseFloat(document.getElementById('tbdy-thresh').value)||1.0);
+  return S.standard==='EC8'?0.90:num('tbdy-thresh',1.0);
 }
 function getSFbounds(){
-  return{sfmin:parseFloat(document.getElementById('sfmin').value)||0.8,
-         sfmax:parseFloat(document.getElementById('sfmax').value)||1.4};
+  return{sfmin:num('sfmin',0.8), sfmax:num('sfmax',1.4)};
+}
+// Checks shared by Apply α and Auto-Scale; returns an error message or ''.
+function scalingInputError(){
+  if(!S.target) return 'Load a target spectrum first.';
+  if(!S.records.length) return 'No records loaded.';
+  if(!hasWindow()) return 'Enter building period T₁, or T low and T high (T high > T low).';
+  const {sfmin,sfmax}=getSFbounds();
+  if(!(sfmin>0) || !(sfmax>0)) return 'SF min and SF max must be greater than 0.';
+  if(sfmin>sfmax) return `SF min (${sfmin}) is greater than SF max (${sfmax}). Please correct the SF range.`;
+  if(buildMat().Av.length<2)
+    return 'No periods inside the scaling window are covered by the target and all records. '+
+           'Check T low / T high against the period ranges of the loaded spectra.';
+  return '';
 }
 
 function runScaling(alpha){
-  if(!S.target){alert('Load a target spectrum first.');return null;}
-  if(!S.records.length){alert('No records loaded.');return null;}
-  if(S.T1<=0){alert('Enter building period T₁ first.');return null;}
+  const err=scalingInputError(); if(err){alert(err);return null;}
   const {sfmin,sfmax}=getSFbounds();
   const thresh=getThresh();
   const {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp}=buildMat();
@@ -854,7 +919,7 @@ function runScaling(alpha){
 }
 
 function autoScale(){
-  if(!S.target||!S.records.length||S.T1<=0){alert('Load target, records and set T₁ first.');return;}
+  const err=scalingInputError(); if(err){alert(err);return;}
   document.getElementById('auto-info').textContent='Searching optimal α…';
   setTimeout(()=>{
     const {sfmin,sfmax}=getSFbounds();
@@ -867,7 +932,7 @@ function autoScale(){
       let SF=solveReg(a,Av,tv,P,n,sfmin,sfmax);
       SF=applyPhase2(SF,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInterp);
       const r2=computeR2(SF,commonT,SaTgt,validTgt,SaInterp);
-      if(r2>bestR2){bestR2=r2;bestA=a;bestSF=SF;}
+      if(bestSF===null || r2>bestR2){bestR2=r2;bestA=a;bestSF=SF;}
     }
     document.getElementById('alpha').value=bestA;
     bestSF.forEach((sf,i)=>S.records[i].SF=sf);
@@ -879,7 +944,7 @@ function autoScale(){
 }
 
 function applyAlpha(){
-  const alpha=parseFloat(document.getElementById('alpha').value)||0;
+  const alpha=Math.max(0,num('alpha',0));
   const res=runScaling(alpha); if(!res)return;
   const {SF,commonT,SaTgt,validTgt,SaInterp}=res;
   SF.forEach((sf,i)=>S.records[i].SF=sf);
@@ -906,7 +971,7 @@ function updateRecCountBadge(){
   if(n===0){ el.textContent=''; el.className='info'; return; }
 
   if(isEC8){
-    // EC8 EN 1998-1 §3.2.3.1.2 (min 3) and §4.3.3.4.3(4) (mean allowed at >=7)
+    // EC8: minimum 3 records; mean response permitted at >= 7
     if(n<3){
       el.textContent=`⚠  ${n} record set(s) — EC8 requires a minimum of 3`;
       el.className='info warn';
@@ -918,7 +983,7 @@ function updateRecCountBadge(){
       el.className='info ok';
     }
   } else {
-    // TBDY 2018 §2.5.1 — at least eleven record sets
+    // TBDY 2018: at least eleven record sets
     if(n<11){
       el.textContent=`⚠  ${n} / 11 record sets — TBDY 2018 requires at least 11 record sets`;
       el.className='info warn';
@@ -929,86 +994,136 @@ function updateRecCountBadge(){
   }
 }
 
+// Mean of the scaled record spectra on a period grid. A period is NaN
+// unless EVERY record covers it — the same rule the scaling uses, so the
+// plot, the check and the export never count a missing record as zero.
+function meanScaled(grid){
+  const n=S.records.length;
+  return grid.map(t=>{
+    let s=0;
+    for(const r of S.records){
+      const v=interp1(r.T,r.Sa,[t])[0];
+      if(!isFinite(v)) return NaN;
+      s+=v*r.SF;
+    }
+    return s/n;
+  });
+}
+// Period grid for plotting / exporting the mean: the record with most points.
+function meanGrid(){
+  return S.records.reduce((a,r)=>r.T.length>a.length?r.T:a, []);
+}
+
+// Which spectra do not span the whole scaling window.
+function coverageIssues(){
+  if(!hasWindow()) return [];
+  const {T1,T2}=getWindow(), tol=1e-9, out=[];
+  const short=(T)=>!T.length || T[0]>T1+tol || T[T.length-1]<T2-tol;
+  if(S.target && short(S.target.T)) out.push('target spectrum');
+  S.records.forEach(r=>{ if(short(r.T)) out.push(r.name); });
+  return out;
+}
+function updateCoverageBadge(){
+  const el=document.getElementById('cov-badge'); if(!el) return;
+  const bad=coverageIssues();
+  if(!bad.length){ el.textContent=''; el.className='info'; return; }
+  const {T1,T2}=getWindow();
+  const list=bad.slice(0,4).join(', ')+(bad.length>4?` (+${bad.length-4} more)`:'');
+  el.textContent=`⚠  Not covering the full window ${T1.toFixed(3)} – ${T2.toFixed(3)} s: ${list}. `+
+                 `Periods outside their range are excluded from scaling and from the check.`;
+  el.className='info warn';
+}
+
+const RESULT_IDS=['r-02T','r-upT','r-minr','r-mnr','r-rmse','r-nrmse','r-R2',
+  'r-defmax','r-defrms','r-defT','r-pass','r-fail','r-npts','r-neff','r-cv','r-Nrec','r-rule'];
+
+function blankResults(){
+  RESULT_IDS.forEach(id=>{
+    const e=document.getElementById(id); if(e){e.textContent='--';e.className='';e.style.color='';}
+  });
+  document.getElementById('r-n').textContent=S.records.length;
+  document.getElementById('r-tgt').textContent=S.target?S.target.label:'None loaded';
+  document.getElementById('r-T1').textContent=S.T1>0?S.T1.toFixed(3)+' s':'Not set';
+  if(hasWindow()){
+    const {T1,T2}=getWindow();
+    document.getElementById('r-02T').textContent=T1.toFixed(3)+' s';
+    document.getElementById('r-upT').textContent=T2.toFixed(3)+' s';
+  }
+  ['comp-badge','part-badge'].forEach(id=>{
+    const e=document.getElementById(id); if(e){e.textContent='';e.className='info';}
+  });
+}
+
+function fillRecordRule(){
+  const n=S.records.length; if(!n) return;
+  const isEC8=S.standard==='EC8';
+  document.getElementById('r-Nrec').textContent=n+' set(s)';
+  const re=document.getElementById('r-rule');
+  if(isEC8){
+    if(n<3){ re.textContent=`N = ${n} < 3  →  below EC8 minimum`; re.style.color='var(--red)'; }
+    else if(n<7){ re.textContent=`3 ≤ N < 7  →  use MAX (envelope)`; re.style.color='#cc6600'; }
+    else { re.textContent='N ≥ 7  →  use MEAN response'; re.style.color='var(--green)'; }
+  } else {
+    if(n<11){ re.textContent=`N = ${n} < 11  →  below TBDY minimum`; re.style.color='var(--red)'; }
+    else { re.textContent='N ≥ 11  →  meets TBDY minimum'; re.style.color='var(--green)'; }
+  }
+}
+
 function refreshAll(){
-  // Redraw the plot first so markers and mean line always reflect
-  // the current window bounds, SF values, and target — including
-  // when the user edits the T low / T high fields directly.
+  // Redraw first so markers and the mean line always reflect the current
+  // window, SFs and target — including direct edits of T low / T high.
   redraw();
-
-  const ready = S.target && S.T1>0 && S.records.length;
-  const badge = document.getElementById('comp-badge');
-
-  // Record-count check is independent of spectral compliance — always shown
+  updateWinInfo();
   updateRecCountBadge();
+  blankResults();          // nothing stale can remain on screen
+  fillRecordRule();
+  updateCoverageBadge();
 
-  if(!ready){
-    // Blank every result field so nothing stale is left on screen
-    ['r-n','r-tgt','r-T1','r-02T','r-upT','r-minr','r-mnr','r-rmse',
-     'r-nrmse','r-R2','r-defmax','r-defrms','r-defT','r-pass','r-fail',
-     'r-Nrec','r-rule'].forEach(id=>{
-      const e=document.getElementById(id); if(e){e.textContent='--';e.className='';}
-    });
-    document.getElementById('r-n').textContent=S.records.length;
-    document.getElementById('r-tgt').textContent=S.target?S.target.label:'None loaded';
-    document.getElementById('r-T1').textContent=S.T1>0?S.T1.toFixed(3)+' s':'Not set';
-    if(badge){badge.textContent='';badge.className='info';}
-    const pw0=document.getElementById('part-badge'); if(pw0){pw0.textContent='';pw0.className='info';}
+  if(!(S.target && hasWindow() && S.records.length)) return;
+
+  const badge = document.getElementById('comp-badge');
+  const res = checkCompliance();
+  if(!res){
+    badge.textContent='⚠ No periods inside the window are covered by the target and all records — nothing to check.';
+    badge.className='info warn';
     return;
   }
 
-  const res = checkCompliance();
-
-  if(badge && res){
-    if(res.pass){
-      badge.textContent=`✔ PASS — min ratio ${res.minR.toFixed(3)} ≥ ${res.thresh.toFixed(2)}`;
-      badge.className='info ok';
-    } else {
-      // If any SF sits on a bound, the uplift could not reach the floor
-      // because it saturated — widening the SF range may fix it. Say so,
-      // otherwise the user blames the records.
-      const {sfmin,sfmax}=getSFbounds();
-      const atMax=S.records.filter(r=>r.SF>=sfmax-1e-6).length;
-      const atMin=S.records.filter(r=>r.SF<=sfmin+1e-6).length;
-      let hint='';
-      if(atMax) hint=`  →  ${atMax} SF at upper bound ${sfmax}; try raising SF max`;
-      else if(atMin) hint=`  →  ${atMin} SF at lower bound ${sfmin}; try lowering SF min`;
-      badge.textContent=`✖ FAIL — min ratio ${res.minR.toFixed(3)} < ${res.thresh.toFixed(2)}  (${res.nFail} pts, max deficit ${res.defMax.toFixed(4)})${hint}`;
-      badge.className='info warn';
-    }
-    // Participation warning is independent of pass/fail — a compliant result
-    // carried by one or two records still defeats the intent of the code's
-    // minimum-record rule.
-    const pw=document.getElementById('part-badge');
-    if(pw){
-      if(res.poorPart){
-        pw.textContent=`⚠  Only ${res.Neff.toFixed(1)} of ${S.records.length} records effectively contribute — a few dominate the mean. Narrow the SF range or raise α.`;
-        pw.className='info warn';
-      } else {
-        pw.textContent='';
-        pw.className='info';
-      }
-    }
+  if(res.pass){
+    badge.textContent=`✔ PASS — min ratio ${res.minR.toFixed(3)} ≥ ${res.thresh.toFixed(2)}`;
+    badge.className='info ok';
+  } else {
+    // If any SF sits on a bound, the uplift could not reach the floor
+    // because it saturated — widening the SF range may fix it. Say so,
+    // otherwise the user blames the records.
+    const {sfmin,sfmax}=getSFbounds();
+    const atMax=S.records.filter(r=>r.SF>=sfmax-1e-6).length;
+    const atMin=S.records.filter(r=>r.SF<=sfmin+1e-6).length;
+    let hint='';
+    if(atMax) hint=`  →  ${atMax} SF at upper bound ${sfmax}; try raising SF max`;
+    else if(atMin) hint=`  →  ${atMin} SF at lower bound ${sfmin}; try lowering SF min`;
+    badge.textContent=`✖ FAIL — min ratio ${res.minR.toFixed(3)} < ${res.thresh.toFixed(2)}  (${res.nFail} pts, max deficit ${res.defMax.toFixed(4)})${hint}`;
+    badge.className='info warn';
+  }
+  // Participation warning is independent of pass/fail — a compliant result
+  // carried by one or two records still defeats the intent of the code's
+  // minimum-record rule.
+  const pw=document.getElementById('part-badge');
+  if(res.poorPart){
+    pw.textContent=`⚠  Only ${res.Neff.toFixed(1)} of ${S.records.length} records effectively contribute — a few dominate the mean. Narrow the SF range or raise α.`;
+    pw.className='info warn';
   }
 }
 
 function checkCompliance(){
-  const isEC8=S.standard==='EC8';
-  document.getElementById('r-n').textContent=S.records.length;
-  document.getElementById('r-tgt').textContent=S.target?S.target.label:'None loaded';
-  document.getElementById('r-T1').textContent=S.T1>0?S.T1.toFixed(3)+' s':'Not set';
-  if(!S.target||S.T1<=0||!S.records.length)return;
-
   const {T1,T2}=getWindow();
-  document.getElementById('r-02T').textContent=T1.toFixed(3)+' s';
-  document.getElementById('r-upT').textContent=T2.toFixed(3)+' s';
-
-  const ct=linspace(T1,T2,300);
+  const NPTS=300;
+  const ct=linspace(T1,T2,NPTS);
   const tgt=interp1(S.target.T,S.target.Sa,ct);
-  const valid=tgt.map((v,k)=>isFinite(v)&&v>0);
-  const ms=ct.map((_,k)=>{let s=0;S.records.forEach(r=>{const v=interp1(r.T,r.Sa,[ct[k]])[0]*r.SF;s+=isFinite(v)?v:0;});return s/S.records.length;});
-  const idx=valid.map((b,i)=>b&&isFinite(ms[i])&&ms[i]>0?i:-1).filter(i=>i>=0);
+  const ms=meanScaled(ct);
+  const idx=ct.map((_,i)=>isFinite(tgt[i])&&tgt[i]>0&&isFinite(ms[i])&&ms[i]>0?i:-1).filter(i=>i>=0);
   const av=idx.map(i=>ms[i]),tv=idx.map(i=>tgt[i]);
-  if(av.length<2)return;
+  if(av.length<2) return null;
 
   const ratios=av.map((v,i)=>v/tv[i]);
   const minR=Math.min(...ratios),mnR=mean(ratios);
@@ -1018,10 +1133,10 @@ function checkCompliance(){
   // ---- Normalised RMSE: dimensionless, comparable across sites / hazard levels
   const nrmse = mt>0 ? rmse/mt : NaN;
 
-  // ---- Deficiency below the code floor:  d = max(0, alpha*target - mean)
+  // ---- Deficiency below the code floor:  d = max(0, bound*target - mean)
   //      Only undershoot counts. Overshoot is code-compliant and scores zero.
-  const alpha = getThresh();
-  const defs  = av.map((v,i)=>Math.max(0, alpha*tv[i] - v));
+  const thresh = getThresh();
+  const defs  = av.map((v,i)=>Math.max(0, thresh*tv[i] - v));
   const defMax = Math.max(...defs);
   const defRms = Math.sqrt(defs.reduce((s,d)=>s+d*d,0)/defs.length);
   const iMax   = defs.indexOf(defMax);
@@ -1035,18 +1150,20 @@ function checkCompliance(){
 
   const dmEl=document.getElementById('r-defmax');
   dmEl.textContent=defMax.toFixed(5);
-  dmEl.className='metric-value '+(defMax<=1e-9?'pass':'fail');
+  dmEl.className=(defMax<=1e-9?'pass':'fail');
   document.getElementById('r-defrms').textContent=defRms.toFixed(5);
   document.getElementById('r-defT').textContent=
     (defMax<=1e-9)?'— (no shortfall)':(isFinite(TatMax)?TatMax.toFixed(3)+' s':'--');
 
-  const thresh=getThresh();
   const nFail=ratios.filter(r=>r<thresh).length;
   const pass=nFail===0;
   const pe=document.getElementById('r-pass');
   pe.textContent=pass?'✔  PASS':'✖  FAIL';
-  pe.className='metric-value '+(pass?'pass':'fail');
+  pe.className=(pass?'pass':'fail');
   document.getElementById('r-fail').textContent=`${nFail} / ${ratios.length} points below ${thresh.toFixed(2)}`;
+  const nptsEl=document.getElementById('r-npts');
+  nptsEl.textContent=`${ratios.length} of ${NPTS}`+(ratios.length<NPTS?'  (partial coverage)':'');
+  if(ratios.length<NPTS) nptsEl.style.color='#cc6600';
 
   // ---- Record participation -----------------------------------------
   // N_eff = 1 / sum(w^2) with w = SF / sum(SF)  (inverse participation ratio).
@@ -1057,7 +1174,7 @@ function checkCompliance(){
   const sfTot = sfs.reduce((a,b)=>a+b,0);
   const wts   = sfTot>0 ? sfs.map(v=>v/sfTot) : sfs.map(()=>0);
   const Neff  = sfTot>0 ? 1/wts.reduce((a,w)=>a+w*w,0) : 0;
-  const sfCV  = sfs.length>1 ? std(sfs)/mean(sfs) : 0;
+  const sfCV  = (sfs.length>1 && mean(sfs)>0) ? std(sfs)/mean(sfs) : 0;
 
   const neEl=document.getElementById('r-neff');
   neEl.textContent=`${Neff.toFixed(2)} of ${S.records.length}`;
@@ -1066,18 +1183,6 @@ function checkCompliance(){
   const cvEl=document.getElementById('r-cv');
   cvEl.textContent=sfCV.toFixed(3);
   cvEl.style.color = poorPart ? 'var(--red)' : '';
-
-  const n=S.records.length;
-  document.getElementById('r-Nrec').textContent=n+' set(s)';
-  const re=document.getElementById('r-rule');
-  if(isEC8){
-    if(n<3){ re.textContent=`N = ${n} < 3  →  below EC8 minimum`; re.style.color='var(--red)'; }
-    else if(n<7){ re.textContent=`3 ≤ N < 7  →  use MAX (envelope)`; re.style.color='#cc6600'; }
-    else { re.textContent='N ≥ 7  →  use MEAN response'; re.style.color='var(--green)'; }
-  } else {
-    if(n<11){ re.textContent=`N = ${n} < 11  →  below TBDY minimum`; re.style.color='var(--red)'; }
-    else { re.textContent='N ≥ 11  →  meets TBDY minimum'; re.style.color='var(--green)'; }
-  }
 
   return {pass, minR, thresh, nFail, defMax, Neff, poorPart};
 }
@@ -1108,15 +1213,63 @@ function resetAxis(){
 // ══════════════════════════════════════════════════════════════════════
 function exportCSV(){
   if(!S.records.length){alert('No records to export.');return;}
-  let csv='Scale Factors\nRecordName,ScaleFactor,Component\n';
-  S.records.forEach(r=>csv+=`${r.name},${r.SF.toFixed(6)},${r.comp}\n`);
+  refreshAll();   // make sure every result field reflects the current state
+
+  const q   = v => { const t=String(v??''); return /[",\n]/.test(t) ? '"'+t.replace(/"/g,'""')+'"' : t; };
+  const txt = id => { const e=document.getElementById(id); return e ? e.textContent.trim() : ''; };
+  const val = id => document.getElementById(id).value;
+  const row = (k,v,u='') => csv += `${q(k)},${q(v)},${q(u)}\n`;
+  const isEC8 = S.standard==='EC8';
+  const w = getWindow(), win = hasWindow();
+  const {sfmin,sfmax} = getSFbounds();
+  const ver = (document.querySelector('#hdr p')||{}).textContent||'';
+  const dfl = S.T1>0 && win &&
+              +w.T1.toFixed(3)===+(0.2*S.T1).toFixed(3) &&
+              +w.T2.toFixed(3)===+((isEC8?2.0:1.5)*S.T1).toFixed(3);
+
+  let csv = '';
+  // ---------------- SECTION 1: SUMMARY ----------------
+  csv += 'SUMMARY\nParameter,Value,Unit\n';
+  row('Tool', ver.split('·')[0].trim());
+  row('Exported', new Date().toISOString().replace('T',' ').slice(0,19), 'UTC');
+  row('Standard', isEC8 ? 'EC8 EN 1998-1:2004' : 'TBDY 2018');
+  row('Target spectrum', S.target ? S.target.label : 'None loaded');
+  if(S.target) row('Target columns (T / Sa)', `${S.target.Tcol} / ${S.target.Sacol}`);
+  row('Records loaded', S.records.length);
+  row('Building period T1', S.T1>0 ? S.T1.toFixed(4) : 'Not set', S.T1>0?'s':'');
+  row('T low',  win ? w.T1.toFixed(4) : '--', 's');
+  row('T high', win ? w.T2.toFixed(4) : '--', 's');
+  row('Window source', !win ? '--' : (dfl ? 'Code default (from T1)' : 'Custom'));
+  row('SF min', sfmin);
+  row('SF max', sfmax);
+  row('Lower bound (mean/target)', getThresh().toFixed(2), isEC8 ? 'EC8 fixed 0.90' : '');
+  row('Alpha', val('alpha'));
+  const ax = S.axLimits;
+  row('Axis X min', ax ? ax.xmin : 'Auto', 's');
+  row('Axis X max', ax ? ax.xmax : 'Auto', 's');
+  row('Axis Y min', ax ? ax.ymin : 'Auto');
+  row('Axis Y max', ax ? ax.ymax : 'Auto');
+
+  csv += '\nRESULTS\nMetric,Value\n';
+  [['Min ratio (mean/target)','r-minr'],['Mean ratio (mean/target)','r-mnr'],
+   ['RMSE','r-rmse'],['Normalised RMSE','r-nrmse'],['R2 (shape only)','r-R2'],
+   ['Max deficiency','r-defmax'],['RMS deficiency','r-defrms'],['Period at max deficiency','r-defT'],
+   ['Lower-bound check','r-pass'],['Points failing bound','r-fail'],['Periods checked','r-npts'],
+   ['Effective records N_eff','r-neff'],['SF coefficient of variation','r-cv'],
+   ['Record sets','r-Nrec'],['Record-count requirement','r-rule']
+  ].forEach(([k,id]) => csv += `${q(k)},${q(txt(id))}\n`);
+
+  // ---------------- SECTION 2: SCALE FACTORS ----------------
+  csv += '\nSCALE FACTORS\nRecordName,ScaleFactor,Component\n';
+  S.records.forEach(r => csv += `${q(r.name)},${r.SF.toFixed(6)},${r.comp}\n`);
+
+  // ---------------- SECTION 3: MEAN SCALED SPECTRUM ----------------
   if(S.target&&S.records.length){
-    const ct=S.records[0].T;
-    const ms=ct.map((_,k)=>{let s=0;S.records.forEach(r=>{const v=interp1(r.T,r.Sa,[ct[k]])[0]*r.SF;s+=isFinite(v)?v:0;});return s/S.records.length;});
-    csv+='\nMean Scaled Spectrum\nT_s,Sa_mean\n';
-    ct.forEach((t,k)=>csv+=`${t.toFixed(6)},${ms[k].toFixed(6)}\n`);
+    const ct=meanGrid(), ms=meanScaled(ct);
+    csv+='\nMEAN SCALED SPECTRUM  (blank = period not covered by all records)\nT_s,Sa_mean\n';
+    ct.forEach((t,k)=>csv+=`${t.toFixed(6)},${isFinite(ms[k])?ms[k].toFixed(6):''}\n`);
   }
-  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:'ScalingResults.csv'});
+  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'})),download:'ScalingResults.csv'});
   a.click();
 }
 
@@ -1134,27 +1287,29 @@ function redraw(){
 
   const n=S.records.length;
   if(n>0){
-    let cT=S.records[0].T,sum=new Array(cT.length).fill(0);
     S.records.forEach((r,i)=>{
-      const sSa=r.Sa.map(v=>v*r.SF);
-      traces.push({x:r.T,y:sSa,mode:'lines',
+      traces.push({x:r.T,y:r.Sa.map(v=>v*r.SF),mode:'lines',
         name:`${r.name} [${r.comp}] SF=${r.SF.toFixed(3)}`,
         line:{color:COLS[i%COLS.length],width:0.9},opacity:0.5});
-      const ip=interp1(r.T,sSa,cT);
-      sum=sum.map((s,k)=>s+(isFinite(ip[k])?ip[k]:0));
     });
-    traces.push({x:cT,y:sum.map(v=>v/n),mode:'lines',
+    // Mean drawn only where every record has data (gap elsewhere)
+    const cT=meanGrid(), mS=meanScaled(cT).map(v=>isFinite(v)?v:null);
+    traces.push({x:cT,y:mS,mode:'lines',connectgaps:false,
       name:`Mean (N=${n})`,line:{color:'#cc0000',width:2.8}});
   }
 
   const shapes=[],anns=[];
-  if(S.T1>0){
-    const {T1:wLo,T2:wHi,isEC8}=getWindow();
-    const lb=isEC8?'2T₁':'1.5T₁';
-    [{x:S.T1,dash:'solid',lbl:`T₁=${S.T1.toFixed(3)} s`},
-     {x:wLo,  dash:'dash', lbl:`T low=${wLo.toFixed(3)} s`},
-     {x:wHi,  dash:'dash', lbl:`T high=${wHi.toFixed(3)} s`}
-    ].forEach(mk=>{
+  const markers=[];
+  const showT1=document.getElementById('showT1');
+  if(S.T1>0 && (!showT1 || showT1.checked))
+    markers.push({x:S.T1,dash:'solid',lbl:`T₁=${S.T1.toFixed(3)} s`});
+  if(hasWindow()){
+    const {T1:wLo,T2:wHi}=getWindow();
+    markers.push({x:wLo,dash:'dash',lbl:`T low=${wLo.toFixed(3)} s`});
+    markers.push({x:wHi,dash:'dash',lbl:`T high=${wHi.toFixed(3)} s`});
+  }
+  {
+    markers.forEach(mk=>{
       shapes.push({type:'line',x0:mk.x,x1:mk.x,y0:0,y1:1,yref:'paper',
         line:{color:'#1a4faa',width:1.4,dash:mk.dash}});
       anns.push({x:mk.x,y:0.02,yref:'paper',text:mk.lbl,textangle:-90,
