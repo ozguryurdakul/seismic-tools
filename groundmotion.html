@@ -87,7 +87,7 @@ input[type=checkbox]{accent-color:var(--blue);}
 <div id="panel">
   <div id="hdr">
     <h1>〰 Ground Motion Processor — PGA · PGV · PGD</h1>
-    <p>GroundMotionGUI v1.1 · University of Pardubice · TA CR – SIGMA</p>
+    <p>GroundMotionGUI v1.2 · University of Pardubice · TA CR – SIGMA</p>
   </div>
 
   <div class="tab-bar">
@@ -254,6 +254,10 @@ input[type=checkbox]{accent-color:var(--blue);}
           <thead><tr><th></th><th style="text-align:right;">Value</th><th style="text-align:right;">at t (s)</th></tr></thead>
           <tbody id="res-peaks"></tbody>
         </table>
+        <div class="sep">Arias Intensity</div>
+        <table class="res-tbl" style="margin-bottom:4px;"><tbody id="res-arias"></tbody></table>
+        <div class="hint">I<sub>a</sub> = π/(2g)·∫a² dt. D5–95 / D5–75 = time between 5 % and 95 % / 75 % of I<sub>a</sub>.
+          See the Husid plot in the Arias Intensity plot tab.</div>
         <div class="sep">Processing Steps (why correction matters)</div>
         <table class="res-tbl" style="margin-bottom:4px;">
           <thead><tr><th>Step</th><th style="text-align:right;">PGV (cm/s)</th><th style="text-align:right;">PGD (cm)</th></tr></thead>
@@ -288,6 +292,7 @@ input[type=checkbox]{accent-color:var(--blue);}
   <div class="plot-tabs">
     <button class="tab-btn active" onclick="switchPlot(0,this)">Time Histories</button>
     <button class="tab-btn" onclick="switchPlot(1,this)">Fourier Spectrum</button>
+    <button class="tab-btn" onclick="switchPlot(2,this)">Arias Intensity</button>
     <div id="curve-sel" style="margin-left:auto;padding:6px 14px;display:flex;align-items:center;gap:12px;font-size:12px;">
       <span class="lbl bold">Show:</span>
       <label><input type="checkbox" data-step="0" checked onchange="if(S.res)plotAll()"> 1 Raw</label>
@@ -305,6 +310,10 @@ input[type=checkbox]{accent-color:var(--blue);}
     <div class="plot-div" id="plt-fas-log"></div>
     <div class="plot-div" id="plt-fas-orig"></div>
     <div class="plot-div" id="plt-fas-filt"></div>
+  </div>
+  <div class="plot-view" id="pv2">
+    <div class="plot-div" id="plt-ai-acc"></div>
+    <div class="plot-div" id="plt-husid"></div>
   </div>
 </div>
 
@@ -510,6 +519,23 @@ function fourierAmp(a, dt){
   return {f,A};
 }
 
+// ---- Arias intensity  Ia = π/(2g)·∫a² dt  (a in cm/s² → Ia in m/s),
+//      cumulative curve (Husid) and significant durations D5–75, D5–95
+function ariasIntensity(a, dt){
+  const n=a.length, cum=new Float64Array(n), k=Math.PI/(2*980.665)/100;   // cm/s → m/s
+  for(let i=1;i<n;i++) cum[i]=cum[i-1]+k*(a[i-1]*a[i-1]+a[i]*a[i])*dt/2;
+  const Ia=cum[n-1];
+  // time at which the cumulative curve reaches p·Ia (linear interpolation between samples)
+  const at=p=>{
+    if(!(Ia>0)) return 0;
+    const v=p*Ia; let i=1; while(i<n-1&&cum[i]<v) i++;
+    const c0=cum[i-1], c1=cum[i];
+    return (i-1+(c1>c0?(v-c0)/(c1-c0):0))*dt;
+  };
+  const t5=at(0.05), t75=at(0.75), t95=at(0.95);
+  return {Ia,cum,t5,t75,t95,D575:t75-t5,D595:t95-t5};
+}
+
 // ---- default options (same as the MATLAB v4 settings block)
 const DEFAULT_OPT={pre_event_s:0, baseline_order:1, taper_s:1, filter_type:'bandpass',
   fc_low:0.1, fc_high:25, order:4, causal:false, pad:true, integration:'linear', disp_poly_order:0};
@@ -619,6 +645,7 @@ function switchTab(idx){
 function switchPlot(idx){
   document.querySelectorAll('.plot-tabs .tab-btn').forEach((b,i)=>b.classList.toggle('active',i===idx));
   document.querySelectorAll('.plot-view').forEach((p,i)=>p.classList.toggle('active',i===idx));
+  document.getElementById('curve-sel').style.visibility=idx===0?'visible':'hidden';   // step boxes apply to time histories only
   document.querySelectorAll(`#pv${idx} .plot-div`).forEach(d=>Plotly.Plots.resize(d));
 }
 
@@ -858,6 +885,7 @@ function compute(){
         [`3. + baseline (${bl}) + taper`,R1.PGV,R1.PGD],
         [opt.filter_type==='none'?'4. No filter (= result)':`4. + ${opt.filter_type} filter (= result)`,R.PGV,R.PGD]];
       S.res={f,R,R0,sweep,opt,steps,
+        AI:ariasIntensity(R.acc,f.dt), AIraw:ariasIntensity(f.acc,f.dt),
         th:[{acc:f.acc,vel:raw.v,dis:raw.d},{acc:R0.acc,vel:R0.vel,dis:R0.dis},{acc:R1.acc,vel:R1.vel,dis:R1.dis},{acc:R.acc,vel:R.vel,dis:R.dis}]};
       plotAll(); showResults();
       status.textContent=`✔ ${f.name}: PGA ${R.PGA.toFixed(2)} cm/s², PGV ${R.PGV.toFixed(2)} cm/s, PGD ${R.PGD.toFixed(2)} cm`+adjNote;
@@ -879,6 +907,13 @@ function showResults(){
     `<tr><td></td><td class="num">${(R.PGA/980.665).toFixed(4)} g</td><td></td></tr>`+
     row('PGV',R.PGV.toFixed(3),'cm/s',(f.t0+R.tPGV).toFixed(3))+
     row('PGD',R.PGD.toFixed(3),'cm',(f.t0+R.tPGD).toFixed(3));
+  const {AI,AIraw}=S.res, ts=v=>(f.t0+v).toFixed(2);
+  document.getElementById('res-arias').innerHTML=
+    `<tr><td><b>I<sub>a</sub></b></td><td class="num"><span class="res-big">${AI.Ia.toFixed(4)}</span> m/s</td></tr>`+
+    `<tr><td>I<sub>a</sub> of raw record (for comparison)</td><td class="num">${AIraw.Ia.toFixed(4)} m/s</td></tr>`+
+    `<tr><td>t<sub>5</sub> / t<sub>75</sub> / t<sub>95</sub></td><td class="num">${ts(AI.t5)} / ${ts(AI.t75)} / ${ts(AI.t95)} s</td></tr>`+
+    `<tr><td><b>D5–75</b></td><td class="num">${AI.D575.toFixed(2)} s</td></tr>`+
+    `<tr><td><b>D5–95</b></td><td class="num">${AI.D595.toFixed(2)} s</td></tr>`;
   const d=R.diag;
   document.getElementById('res-diag').innerHTML=
     `<tr><td>Final velocity</td><td class="num">${d.v_end.toFixed(3)} cm/s</td></tr>`+
@@ -960,6 +995,24 @@ function plotAll(){
     lay('Original acceleration (mean removed) — frequency spectrum','','',linAx),CFG);
   Plotly.react('plt-fas-filt',[{x:Array.from(R.freq),y:Array.from(R.FAS),type:'scatter',mode:'lines',line:{color:'#ff0000',width:1.2}}],
     lay('Filtered acceleration — frequency spectrum','','',linAx),CFG);
+
+  // Arias intensity: corrected acceleration with the D5–95 window, and the Husid plot
+  const AI=S.res.AI, T5=f.t0+AI.t5, T75=f.t0+AI.t75, T95=f.t0+AI.t95;
+  const band={type:'rect',xref:'x',yref:'paper',x0:T5,x1:T95,y0:0,y1:1,fillcolor:'rgba(91,45,142,0.10)',line:{width:0},layer:'below'};
+  const vline=(x,dash)=>({type:'line',xref:'x',yref:'paper',x0:x,x1:x,y0:0,y1:1,line:{color:'#5b2d8e',width:1,dash}});
+  Plotly.react('plt-ai-acc',[tr(R.acc,'corrected',C_A,1.2)],
+    lay(`Corrected acceleration — significant duration D5–95 = ${AI.D595.toFixed(2)} s (shaded)`,'Time  (s)','a  (cm/s²)',
+      {...xr,showlegend:false,shapes:[band,vline(T5,'dash'),vline(T95,'dash')]}),CFG);
+  const hl=p=>({type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:p*AI.Ia,y1:p*AI.Ia,line:{color:'#aaa',width:1,dash:'dot'}});
+  const lab=p=>({x:0.005,y:p*AI.Ia,xref:'paper',yref:'y',xanchor:'left',yanchor:'bottom',text:`${Math.round(p*100)} %`,showarrow:false,font:{size:10,color:'#5b2d8e'}});
+  Plotly.react('plt-husid',[{x:t,y:AI.cum,type:TR,mode:'lines',name:'cumulative Ia',line:{color:'#5b2d8e',width:1.8}},
+      {x:[t[0]],y:[0],yaxis:'y2',type:'scatter',mode:'markers',marker:{opacity:0},hoverinfo:'skip',showlegend:false}],   // draws the % axis
+    lay(`Husid plot — Ia = ${AI.Ia.toFixed(4)} m/s,  D5–75 = ${AI.D575.toFixed(2)} s,  D5–95 = ${AI.D595.toFixed(2)} s`,'Time  (s)','Ia  (m/s)',{
+      ...xr,showlegend:false,margin:{l:62,r:52,t:44,b:40},
+      yaxis:{...AXSTYLE,title:'Ia  (m/s)',range:[0,1.05*AI.Ia||1]},
+      yaxis2:{...AXSTYLE,title:'% of Ia',overlaying:'y',side:'right',range:[0,105],showgrid:false},
+      shapes:[band,hl(0.05),hl(0.75),hl(0.95),vline(T5,'dash'),vline(T75,'dot'),vline(T95,'dash')],
+      annotations:[lab(0.05),lab(0.75),lab(0.95)]}),CFG);
 }
 // keep the corrected displacement readable even if the uncorrected one drifts far away
 function padRange(d,d0){
@@ -970,7 +1023,7 @@ function padRange(d,d0){
   const s0=Math.max(mx0-mn0,1e-9); return [mn0-0.05*s0,mx0+0.05*s0];
 }
 function clearPlots(){
-  ['plt-acc','plt-vel','plt-dis','plt-fas-log','plt-fas-orig','plt-fas-filt'].forEach(id=>Plotly.purge(id));
+  ['plt-acc','plt-vel','plt-dis','plt-fas-log','plt-fas-orig','plt-fas-filt','plt-ai-acc','plt-husid'].forEach(id=>Plotly.purge(id));
   S.res=null; initPlots();
   document.getElementById('comp-status').textContent='';
   document.getElementById('res-empty').style.display='';document.getElementById('res-body').style.display='none';
@@ -984,6 +1037,8 @@ function initPlots(){
   empty('plt-fas-log','Fourier amplitude spectrum (log-log)','Frequency  (Hz)','FAS  (cm/s)','Load a record and click Process');
   empty('plt-fas-orig','Original acceleration — frequency spectrum','Frequency  (Hz)','FAS  (cm/s)','');
   empty('plt-fas-filt','Filtered acceleration — frequency spectrum','Frequency  (Hz)','FAS  (cm/s)','');
+  empty('plt-ai-acc','Corrected acceleration — significant duration','Time  (s)','a  (cm/s²)','Load a record and click Process');
+  empty('plt-husid','Husid plot (cumulative Arias intensity)','Time  (s)','Ia  (m/s)','');
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -995,16 +1050,18 @@ function download(text,name){
 }
 function exportTH(){
   if(!S.res){alert('No results to export. Process a record first.');return;}
-  const {R,f,opt,steps,th}=S.res, K=['raw','mean','baseline','corrected'];
+  const {R,f,opt,steps,th,AI,AIraw}=S.res, K=['raw','mean','baseline','corrected'];
   let csv=`# ${settingsText(opt,f)}\n# PGA=${R.PGA.toFixed(6)} cm/s2, PGV=${R.PGV.toFixed(6)} cm/s, PGD=${R.PGD.toFixed(6)} cm\n`;
+  csv+=`# Arias intensity (corrected): Ia=${AI.Ia.toFixed(6)} m/s, t5=${(f.t0+AI.t5).toFixed(3)} s, t75=${(f.t0+AI.t75).toFixed(3)} s, t95=${(f.t0+AI.t95).toFixed(3)} s, D5-75=${AI.D575.toFixed(3)} s, D5-95=${AI.D595.toFixed(3)} s\n`;
+  csv+=`# Arias intensity (raw record): Ia=${AIraw.Ia.toFixed(6)} m/s\n`;
   csv+='# Steps 1-3 are shown for teaching only. The processed result is the *_corrected columns (step 4).\n';
   csv+='# NOTE: SEISMOSIGNAL USES RAW OR MEAN-REMOVED VALUES (STEP 1 OR 2) UNLESS BASELINE CORRECTION / FILTERING IS APPLIED IN SEISMOSIGNAL.\n';
   steps.forEach(s=>csv+=`# ${s[0]}: PGV=${s[1].toFixed(4)} cm/s, PGD=${s[2].toFixed(4)} cm\n`);
-  csv+='# units: acc cm/s2, vel cm/s, disp cm\ntime_s,'+K.map(k=>`acc_${k},vel_${k},disp_${k}`).join(',')+'\n';
+  csv+='# units: acc cm/s2, vel cm/s, disp cm, Arias intensity m/s\ntime_s,'+K.map(k=>`acc_${k},vel_${k},disp_${k}`).join(',')+',arias_cum_corrected\n';
   for(let i=0;i<R.acc.length;i++){
     csv+=(f.t0+i*f.dt).toFixed(5);
     for(const h of th) csv+=`,${h.acc[i].toExponential(6)},${h.vel[i].toExponential(6)},${h.dis[i].toExponential(6)}`;
-    csv+='\n';
+    csv+=`,${AI.cum[i].toExponential(6)}\n`;
   }
   download(csv,f.name.replace(/[^\w.-]+/g,'_')+'_processed.csv');
 }
