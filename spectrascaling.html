@@ -112,7 +112,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
 <div id="panel">
   <div id="hdr">
     <h1>⚡ Response Spectrum Scaling</h1>
-    <p>SpectraScalingGUI v3.0 · University of Pardubice</p>
+    <p>SpectraScalingGUI v3.1 · University of Pardubice</p>
   </div>
 
   <div id="std-bar">
@@ -142,6 +142,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
       <div id="tgt-status" class="info warn">No target spectrum loaded.</div>
       <div id="tgt-file"   class="info" style="color:#666;"></div>
       <div id="tgt-cols"   class="info" style="color:#666;"></div>
+      <div id="tgt-unit-warn" class="info warn"></div>
 
       <div class="sep">Building Period</div>
       <div class="row">
@@ -234,7 +235,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
         <table id="rec-tbl">
           <thead><tr>
             <th style="width:22px;"><input type="checkbox" id="sel-all" onchange="toggleAll()"></th>
-            <th>Record Name</th><th style="width:60px;">SF</th><th style="width:38px;">Comp</th>
+            <th>Record Name</th><th style="width:60px;">SF</th><th style="width:38px;">Comp</th><th style="width:44px;">Units</th>
           </tr></thead>
           <tbody id="rec-body"></tbody>
         </table>
@@ -279,6 +280,7 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
       <div id="nrec-badge" class="info"      style="font-size:11px;margin-top:3px;"></div>
       <div id="part-badge" class="info"      style="font-size:11px;margin-top:3px;"></div>
       <div id="cov-badge"  class="info"      style="font-size:11px;margin-top:3px;"></div>
+      <div id="unit-badge" class="info"      style="font-size:11px;margin-top:3px;"></div>
     </div>
 
     <!-- TAB 3 -->
@@ -298,15 +300,15 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
       <table class="metrics"><tbody>
         <tr><td>Min ratio (mean/target)</td>  <td id="r-minr">--</td></tr>
         <tr><td>Mean ratio (mean/target)</td> <td id="r-mnr">--</td></tr>
-        <tr><td>RMSE</td>                 <td id="r-rmse">--</td></tr>
+        <tr><td>RMSE (g)</td>                 <td id="r-rmse">--</td></tr>
         <tr><td>Normalised RMSE</td>          <td id="r-nrmse">--</td></tr>
         <tr><td>R²  <span style="font-weight:400;color:#888;font-size:10px;">(shape only)</span></td> <td id="r-R2">--</td></tr>
       </tbody></table>
 
       <div class="sep">Deficiency below code floor  (α·target − mean)</div>
       <table class="metrics"><tbody>
-        <tr><td>Max deficiency</td>       <td id="r-defmax">--</td></tr>
-        <tr><td>RMS deficiency</td>       <td id="r-defrms">--</td></tr>
+        <tr><td>Max deficiency (g)</td>       <td id="r-defmax">--</td></tr>
+        <tr><td>RMS deficiency (g)</td>       <td id="r-defrms">--</td></tr>
         <tr><td>Period at max deficiency</td> <td id="r-defT">--</td></tr>
       </tbody></table>
 
@@ -363,7 +365,16 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
         </div>
         <div style="flex:1;min-width:180px;">
           <div class="lbl bold" style="margin-bottom:3px;">Sa column:</div>
-          <select id="sel-Sa" class="sm" style="width:100%;"></select>
+          <select id="sel-Sa" class="sm" style="width:100%;" onchange="autoUnits()"></select>
+        </div>
+        <div style="flex:1;min-width:180px;">
+          <div class="lbl bold" style="margin-bottom:3px;">Sa units: <span id="units-hint" style="font-weight:400;color:#888;font-size:10px;"></span></div>
+          <select id="sel-units" class="sm" style="width:100%;"
+                  onchange="document.getElementById('units-hint').textContent='(set manually)'">
+            <option value="g">g</option>
+            <option value="ms2">m/s²</option>
+            <option value="cms2">cm/s² (gal)</option>
+          </select>
         </div>
         <div style="flex:1;min-width:180px;" id="comp-div">
           <div class="lbl bold" style="margin-bottom:3px;">Component:</div>
@@ -373,6 +384,9 @@ td input[type=number]{width:52px;padding:1px 4px;font-size:11px;}
             <option value="NS">NS – North-South</option>
           </select>
         </div>
+      </div>
+      <div class="info" style="font-size:10px;color:#666;margin-top:6px;">
+        All spectra are converted to g for scaling, plotting and export.
       </div>
     </div>
     <div class="modal-foot">
@@ -476,7 +490,8 @@ function parseCSV(text) {
   if(!data.length)
     throw new Error('No numeric data rows found. Check the file format and delimiter.');
 
-  return { colNames, data, nSkipped };
+  const headerText = lines.slice(0, dataStart).join('\n');
+  return { colNames, data, nSkipped, headerText };
 }
 
 // Periods must increase for interpolation: drop non-numeric pairs and
@@ -484,6 +499,34 @@ function parseCSV(text) {
 function sortSpectrum(T,Sa){
   const pr=T.map((t,i)=>[t,Sa[i]]).filter(([t,a])=>isFinite(t)&&isFinite(a)).sort((a,b)=>a[0]-b[0]);
   return {T:pr.map(p=>p[0]), Sa:pr.map(p=>p[1])};
+}
+
+// ---- Units -------------------------------------------------------------
+// Every spectrum is converted to g when it is loaded, so scaling, α, the
+// plot and the export behave the same whatever units the files use.
+const UNITS={ g:{f:1,lbl:'g'}, ms2:{f:1/9.80665,lbl:'m/s²'}, cms2:{f:1/980.665,lbl:'cm/s²'} };
+function unitsFromText(t){
+  const s=String(t||'').toLowerCase();
+  if(/cm\s*\/\s*s|cm\/sec|cms2|cm_s2|\bgals?\b/.test(s)) return 'cms2';
+  if(/\bm\s*\/\s*s|\bm\/sec|\bms2\b|\bm_s2\b/.test(s))  return 'ms2';
+  if(/(^|[\s(\[_])g($|[\s)\]_])/.test(s))              return 'g';
+  return null;
+}
+// Units from the chosen Sa column name, else from a "UNITS: ..." header line.
+function detectUnits(colName, headerText){
+  const c=unitsFromText(colName);
+  if(c) return {u:c, src:'from column name'};
+  const m=String(headerText||'').match(/^\s*units?\s*[:=]\s*(.+)$/im);
+  const h=m ? unitsFromText(m[1]) : null;
+  if(h) return {u:h, src:'from file header'};
+  return {u:'g', src:'not stated in file — assumed g'};
+}
+function autoUnits(){
+  if(!_parsed) return;
+  const Si=parseInt(document.getElementById('sel-Sa').value);
+  const d=detectUnits(_parsed.colNames[Si], _parsed.headerText);
+  document.getElementById('sel-units').value=d.u;
+  document.getElementById('units-hint').textContent='('+d.src+')';
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -510,6 +553,7 @@ function showModal(fname, parsed, showComp) {
     document.getElementById('sel-T').innerHTML=opts;
     document.getElementById('sel-Sa').innerHTML=opts;
     if(parsed.colNames.length>1) document.getElementById('sel-Sa').value='1';
+    autoUnits();
 
     document.getElementById('col-modal').classList.add('open');
   });
@@ -518,14 +562,16 @@ function confirmModal() {
   const Ti=parseInt(document.getElementById('sel-T').value);
   const Si=parseInt(document.getElementById('sel-Sa').value);
   const comp=document.getElementById('sel-comp').value;
+  const units=document.getElementById('sel-units').value;
+  const f=UNITS[units].f;
   document.getElementById('col-modal').classList.remove('open');
   if(_resolve) {
     _resolve({
       T:   _parsed.data.map(r=>r[Ti]),
-      Sa:  _parsed.data.map(r=>r[Si]),
+      Sa:  _parsed.data.map(r=>r[Si]*f),      // stored in g
       Tcol:_parsed.colNames[Ti],
       Sacol:_parsed.colNames[Si],
-      comp
+      comp, units
     });
     _resolve=null;
   }
@@ -549,7 +595,7 @@ async function loadTarget() {
     document.getElementById('tgt-status').textContent='✔ Target loaded:  '+S.target.label;
     document.getElementById('tgt-status').className='info ok';
     document.getElementById('tgt-file').textContent='File:  '+f.name;
-    document.getElementById("tgt-cols").textContent=`T col: ${sel.Tcol}     Sa col: ${sel.Sacol}`;
+    document.getElementById("tgt-cols").textContent=`T col: ${sel.Tcol}     Sa col: ${sel.Sacol}     Units: ${UNITS[sel.units].lbl}`+(sel.units!=='g'?'  (converted to g)':'');
     refreshAll();
   };
   inp.click();
@@ -666,7 +712,7 @@ async function onFiles() {
   for(const f of files){
     let p; try{p=parseCSV(await f.text());}catch(ex){alert('Cannot read '+f.name+': '+ex.message);continue;}
     const sel=await showModal(f.name,p,true); if(!sel) continue;
-    S.records.push({name:f.name.replace(/\.(csv|txt|asc|dat)$/i,''),...sortSpectrum(sel.T,sel.Sa),SF:1,comp:sel.comp,Tcol:sel.Tcol,Sacol:sel.Sacol});
+    S.records.push({name:f.name.replace(/\.(csv|txt|asc|dat)$/i,''),...sortSpectrum(sel.T,sel.Sa),SF:1,comp:sel.comp,units:sel.units,Tcol:sel.Tcol,Sacol:sel.Sacol});
   }
   document.getElementById('file-inp').value='';
   refreshTable(); updateRecStatus(); refreshAll();
@@ -679,6 +725,7 @@ function refreshTable(){
       <td title="${esc(r.name)}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</td>
       <td><input type="number" value="${r.SF.toFixed(4)}" step="0.01" onchange="S.records[${i}].SF=+this.value"></td>
       <td>${r.comp}</td>
+      <td>${UNITS[r.units||'g'].lbl}</td>
     </tr>`).join('');
 }
 
@@ -763,6 +810,32 @@ function getWindow(){
   };
 }
 
+// Periods at which the lower bound is checked: the 300 evenly spaced
+// points, the window ends, and every tabulated period of the target and the
+// records inside the window. Between consecutive tabulated periods both the
+// mean and the target are linear, so their ratio is monotonic there and its
+// minimum always falls on one of these periods — the check is exact.
+function checkPeriods(T1,T2,base){
+  const set=new Set(base); set.add(T1); set.add(T2);
+  const add=T=>{ for(const t of T) if(t>=T1 && t<=T2) set.add(t); };
+  if(S.target) add(S.target.T);
+  S.records.forEach(r=>add(r.T));
+  return [...set].sort((a,b)=>a-b);
+}
+// Smallest mean/target over the check periods for a set of SFs.
+function floorMin(SF,chk){
+  const n=SF.length; let mn=Infinity;
+  for(let k=0;k<chk.SaTgt.length;k++){
+    if(!chk.validTgt[k]) continue;
+    let s=0, ok=true;
+    for(let i=0;i<n;i++){ const v=chk.SaInterp[i][k]; if(!isFinite(v)){ok=false;break;} s+=v*SF[i]; }
+    if(!ok) continue;
+    const m=s/n; if(!(m>0)) continue;
+    const r=m/chk.SaTgt[k]; if(r<mn) mn=r;
+  }
+  return mn;
+}
+
 function buildMat(){
   const isEC8=S.standard==='EC8';
   const {T1,T2}=getWindow();
@@ -781,7 +854,12 @@ function buildMat(){
   const Av=idxV.map(i=>A[i]);         // |valid|×n  (NaN-free rows)
   const tv=idxV.map(i=>SaTgt[i]);
   const P=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>(i===j?1:0)-1/n));
-  return {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp,idxV};
+  // Exact lower-bound check grid (see checkPeriods)
+  const chkT=checkPeriods(T1,T2,commonT);
+  const chkTgt=interp1(S.target.T,S.target.Sa,chkT);
+  const chk={T:chkT, SaTgt:chkTgt, validTgt:chkTgt.map(v=>isFinite(v)&&v>0),
+             SaInterp:S.records.map(r=>interp1(r.T,r.Sa,chkT))};
+  return {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp,idxV,chk};
 }
 
 function solveReg(alpha,Av,tv,P,n,sfmin,sfmax){
@@ -836,9 +914,11 @@ function nnls(Av,tv,n){
   return x;
 }
 
-function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInterp){
+function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInterp,chk){
   // Exactly matches MATLAB applyPhase2:
   // sumSa += interp1(r.T, r.Sa*SF(i), commonT, NaN) → NaN propagates
+  // The floor factor (lmin) also covers the exact check periods (chk);
+  // the level factor (lopt) is a least-squares fit on the 300 points as before.
   let SF=[...SFin];
   const n=SF.length;
   for(let it=0;it<10;it++){
@@ -857,11 +937,28 @@ function applyPhase2(SFin,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInte
       if(validTgt[k]&&isFinite(meanSa[k])&&meanSa[k]>0){mv.push(meanSa[k]);tv2.push(SaTgt[k]);}
     });
     if(!mv.length)break;
-    const lmin=Math.max(...mv.map((m,i)=>thresh*1.001*tv2[i]/m));
+    // Floor factor: 0.1 % margin on the 300 points (as before), and the
+    // bound itself at every check period (exact check). Results that
+    // already meet the bound at every period are therefore unchanged.
+    let lmin=Math.max(...mv.map((m,i)=>thresh*1.001*tv2[i]/m));
+    const fmin=floorMin(SF,chk);
+    if(isFinite(fmin) && fmin>0) lmin=Math.max(lmin, thresh*(1+1e-9)/fmin);
     const lopt=dot(mv,tv2)/dot(mv,mv);
     const lam=Math.max(lmin,lopt);
     if(lam<=1+1e-9)break;
     SF=SF.map(s=>Math.min(Math.max(s*lam,sfmin),sfmax));
+  }
+  // The rounds above can stop before the floor is reached when several SFs
+  // are held at SF max. Keep raising the others by the smallest factor that
+  // is needed until the floor is met or every SF is at its upper bound.
+  // (Results that already meet the floor are not touched.)
+  for(let it=0; it<1000; it++){
+    const mn=floorMin(SF,chk);
+    if(!(mn<thresh) || !isFinite(mn)) break;
+    const lam=thresh*1.001/mn;
+    const next=SF.map(s=>Math.min(Math.max(s*lam,sfmin),sfmax));
+    if(next.every((v,i)=>Math.abs(v-SF[i])<1e-12)) break;
+    SF=next;
   }
   return SF;
 }
@@ -912,9 +1009,9 @@ function runScaling(alpha){
   const err=scalingInputError(); if(err){alert(err);return null;}
   const {sfmin,sfmax}=getSFbounds();
   const thresh=getThresh();
-  const {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp}=buildMat();
+  const {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp,chk}=buildMat();
   let SF=solveReg(alpha,Av,tv,P,n,sfmin,sfmax);
-  SF=applyPhase2(SF,commonT,SaTgt,validTgt,S.standard==='EC8',sfmin,sfmax,thresh,SaInterp);
+  SF=applyPhase2(SF,commonT,SaTgt,validTgt,S.standard==='EC8',sfmin,sfmax,thresh,SaInterp,chk);
   return {SF,commonT,SaTgt,validTgt,SaInterp};
 }
 
@@ -925,15 +1022,19 @@ function autoScale(){
     const {sfmin,sfmax}=getSFbounds();
     const thresh=getThresh();
     const isEC8=S.standard==='EC8';
-    const {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp}=buildMat();
+    const {commonT,SaTgt,validTgt,Av,tv,P,n,SaInterp,chk}=buildMat();
     const cands=[0,0.05,0.1,0.2,0.5,1,2,5,10,20,50];
-    let bestR2=-Infinity,bestA=0,bestSF=null;
+    // Highest R² among the α values that meet the lower bound; if none
+    // meets it, highest R² overall (as before).
+    let best=null, bestOk=null;
     for(const a of cands){
       let SF=solveReg(a,Av,tv,P,n,sfmin,sfmax);
-      SF=applyPhase2(SF,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInterp);
+      SF=applyPhase2(SF,commonT,SaTgt,validTgt,isEC8,sfmin,sfmax,thresh,SaInterp,chk);
       const r2=computeR2(SF,commonT,SaTgt,validTgt,SaInterp);
-      if(bestSF===null || r2>bestR2){bestR2=r2;bestA=a;bestSF=SF;}
+      if(best===null || r2>best.r2) best={a,SF,r2};
+      if(floorMin(SF,chk)>=thresh && (bestOk===null || r2>bestOk.r2)) bestOk={a,SF,r2};
     }
+    const pick=bestOk||best, bestA=pick.a, bestSF=pick.SF;
     document.getElementById('alpha').value=bestA;
     bestSF.forEach((sf,i)=>S.records[i].SF=sf);
     const cv=std(bestSF)/mean(bestSF);
@@ -999,12 +1100,13 @@ function updateRecCountBadge(){
 // plot, the check and the export never count a missing record as zero.
 function meanScaled(grid){
   const n=S.records.length;
-  return grid.map(t=>{
+  const ip=S.records.map(r=>interp1(r.T,r.Sa,grid));
+  return grid.map((_,k)=>{
     let s=0;
-    for(const r of S.records){
-      const v=interp1(r.T,r.Sa,[t])[0];
+    for(let i=0;i<n;i++){
+      const v=ip[i][k];
       if(!isFinite(v)) return NaN;
-      s+=v*r.SF;
+      s+=v*S.records[i].SF;
     }
     return s/n;
   });
@@ -1031,6 +1133,38 @@ function updateCoverageBadge(){
   const list=bad.slice(0,4).join(', ')+(bad.length>4?` (+${bad.length-4} more)`:'');
   el.textContent=`⚠  Not covering the full window ${T1.toFixed(3)} – ${T2.toFixed(3)} s: ${list}. `+
                  `Periods outside their range are excluded from scaling and from the check.`;
+  el.className='info warn';
+}
+
+// A spectrum loaded in the wrong units shows up as a target far above any
+// real spectral acceleration, or a record about 10× or 1000× off the
+// target (before scaling). Weak records are common, so the low side is
+// only flagged far below the target.
+function unitIssues(){
+  const out={target:'', records:[]};
+  if(S.target && S.target.Sa.length){
+    const mx=Math.max(...S.target.Sa);
+    if(mx>8) out.target=`⚠  Target reaches ${mx.toFixed(1)} g — check its Sa units (a file in m/s² or cm/s² loaded as g?). Load it again with the correct units.`;
+  }
+  if(!S.target || !S.records.length || !hasWindow()) return out;
+  const {T1,T2}=getWindow(), ct=linspace(T1,T2,300);
+  const tg=interp1(S.target.T,S.target.Sa,ct);
+  S.records.forEach(r=>{
+    const ra=interp1(r.T,r.Sa,ct); let s=0,c=0;
+    ra.forEach((v,k)=>{ if(v>0 && tg[k]>0){ s+=Math.log(v/tg[k]); c++; } });
+    if(c){ const g=Math.exp(s/c); if(g>6 || g<1/50) out.records.push({name:r.name, ratio:g}); }
+  });
+  return out;
+}
+function updateUnitBadges(){
+  const u=unitIssues();
+  const t=document.getElementById('tgt-unit-warn'); if(t) t.textContent=u.target;
+  const el=document.getElementById('unit-badge'); if(!el) return;
+  if(!u.records.length){ el.textContent=''; el.className='info'; return; }
+  const fmt=x=> x>=10 ? x.toFixed(0) : x>=1 ? x.toFixed(1) : x.toPrecision(2);
+  const list=u.records.slice(0,4).map(r=>`${r.name} (${fmt(r.ratio)}× target)`).join(', ')+
+             (u.records.length>4?` (+${u.records.length-4} more)`:'');
+  el.textContent=`⚠  Check Sa units: ${list}, before scaling. A record in the wrong units gives a meaningless result — remove it and load it again with the correct units.`;
   el.className='info warn';
 }
 
@@ -1078,6 +1212,7 @@ function refreshAll(){
   blankResults();          // nothing stale can remain on screen
   fillRecordRule();
   updateCoverageBadge();
+  updateUnitBadges();
 
   if(!(S.target && hasWindow() && S.records.length)) return;
 
@@ -1126,7 +1261,16 @@ function checkCompliance(){
   if(av.length<2) return null;
 
   const ratios=av.map((v,i)=>v/tv[i]);
-  const minR=Math.min(...ratios),mnR=mean(ratios);
+  const mnR=mean(ratios);
+  // Lower-bound items (min ratio, PASS/FAIL, points failing, max deficiency
+  // and where it occurs) use the exact check periods: the 300 points plus
+  // every tabulated period in the window. Averages use the 300 points.
+  const cT=checkPeriods(T1,T2,ct);
+  const cTg=interp1(S.target.T,S.target.Sa,cT);
+  const cMs=meanScaled(cT);
+  const cIdx=cT.map((_,i)=>isFinite(cTg[i])&&cTg[i]>0&&isFinite(cMs[i])&&cMs[i]>0?i:-1).filter(i=>i>=0);
+  const cRatios=cIdx.map(i=>cMs[i]/cTg[i]);
+  const minR=Math.min(...cRatios);
   const rmse=Math.sqrt(av.reduce((s,v,i)=>s+(v-tv[i])**2,0)/av.length);
   const mt=mean(tv),R2=1-av.reduce((s,v,i)=>s+(v-tv[i])**2,0)/tv.reduce((s,v)=>s+(v-mt)**2,0);
 
@@ -1137,10 +1281,11 @@ function checkCompliance(){
   //      Only undershoot counts. Overshoot is code-compliant and scores zero.
   const thresh = getThresh();
   const defs  = av.map((v,i)=>Math.max(0, thresh*tv[i] - v));
-  const defMax = Math.max(...defs);
   const defRms = Math.sqrt(defs.reduce((s,d)=>s+d*d,0)/defs.length);
-  const iMax   = defs.indexOf(defMax);
-  const TatMax = iMax>=0 ? ct[idx[iMax]] : NaN;
+  const cDefs  = cIdx.map(i=>Math.max(0, thresh*cTg[i] - cMs[i]));
+  const defMax = Math.max(...cDefs);
+  const iMax   = cDefs.indexOf(defMax);
+  const TatMax = iMax>=0 ? cT[cIdx[iMax]] : NaN;
 
   document.getElementById('r-minr').textContent=minR.toFixed(4);
   document.getElementById('r-mnr').textContent=mnR.toFixed(4);
@@ -1155,15 +1300,16 @@ function checkCompliance(){
   document.getElementById('r-defT').textContent=
     (defMax<=1e-9)?'— (no shortfall)':(isFinite(TatMax)?TatMax.toFixed(3)+' s':'--');
 
-  const nFail=ratios.filter(r=>r<thresh).length;
+  const nFail=cRatios.filter(r=>r<thresh).length;
   const pass=nFail===0;
   const pe=document.getElementById('r-pass');
   pe.textContent=pass?'✔  PASS':'✖  FAIL';
   pe.className=(pass?'pass':'fail');
-  document.getElementById('r-fail').textContent=`${nFail} / ${ratios.length} points below ${thresh.toFixed(2)}`;
+  document.getElementById('r-fail').textContent=`${nFail} / ${cRatios.length} points below ${thresh.toFixed(2)}`;
   const nptsEl=document.getElementById('r-npts');
-  nptsEl.textContent=`${ratios.length} of ${NPTS}`+(ratios.length<NPTS?'  (partial coverage)':'');
-  if(ratios.length<NPTS) nptsEl.style.color='#cc6600';
+  nptsEl.textContent=`${cRatios.length} of ${cT.length}`+(cRatios.length<cT.length?'  (partial coverage)':'');
+  nptsEl.title='300 evenly spaced periods plus every tabulated period of the target and records inside the window';
+  if(cRatios.length<cT.length) nptsEl.style.color='#cc6600';
 
   // ---- Record participation -----------------------------------------
   // N_eff = 1 / sum(w^2) with w = SF / sum(SF)  (inverse participation ratio).
@@ -1235,6 +1381,8 @@ function exportCSV(){
   row('Standard', isEC8 ? 'EC8 EN 1998-1:2004' : 'TBDY 2018');
   row('Target spectrum', S.target ? S.target.label : 'None loaded');
   if(S.target) row('Target columns (T / Sa)', `${S.target.Tcol} / ${S.target.Sacol}`);
+  if(S.target) row('Target Sa units in file', UNITS[S.target.units||'g'].lbl, 'converted to g');
+  row('Spectral values in this file', 'g');
   row('Records loaded', S.records.length);
   row('Building period T1', S.T1>0 ? S.T1.toFixed(4) : 'Not set', S.T1>0?'s':'');
   row('T low',  win ? w.T1.toFixed(4) : '--', 's');
@@ -1252,21 +1400,21 @@ function exportCSV(){
 
   csv += '\nRESULTS\nMetric,Value\n';
   [['Min ratio (mean/target)','r-minr'],['Mean ratio (mean/target)','r-mnr'],
-   ['RMSE','r-rmse'],['Normalised RMSE','r-nrmse'],['R2 (shape only)','r-R2'],
-   ['Max deficiency','r-defmax'],['RMS deficiency','r-defrms'],['Period at max deficiency','r-defT'],
+   ['RMSE (g)','r-rmse'],['Normalised RMSE','r-nrmse'],['R2 (shape only)','r-R2'],
+   ['Max deficiency (g)','r-defmax'],['RMS deficiency (g)','r-defrms'],['Period at max deficiency','r-defT'],
    ['Lower-bound check','r-pass'],['Points failing bound','r-fail'],['Periods checked','r-npts'],
    ['Effective records N_eff','r-neff'],['SF coefficient of variation','r-cv'],
    ['Record sets','r-Nrec'],['Record-count requirement','r-rule']
   ].forEach(([k,id]) => csv += `${q(k)},${q(txt(id))}\n`);
 
   // ---------------- SECTION 2: SCALE FACTORS ----------------
-  csv += '\nSCALE FACTORS\nRecordName,ScaleFactor,Component\n';
-  S.records.forEach(r => csv += `${q(r.name)},${r.SF.toFixed(6)},${r.comp}\n`);
+  csv += '\nSCALE FACTORS\nRecordName,ScaleFactor,Component,UnitsInFile\n';
+  S.records.forEach(r => csv += `${q(r.name)},${r.SF.toFixed(6)},${r.comp},${q(UNITS[r.units||'g'].lbl)}\n`);
 
   // ---------------- SECTION 3: MEAN SCALED SPECTRUM ----------------
   if(S.target&&S.records.length){
     const ct=meanGrid(), ms=meanScaled(ct);
-    csv+='\nMEAN SCALED SPECTRUM  (blank = period not covered by all records)\nT_s,Sa_mean\n';
+    csv+='\nMEAN SCALED SPECTRUM  (blank = period not covered by all records)\nT_s,Sa_mean_g\n';
     ct.forEach((t,k)=>csv+=`${t.toFixed(6)},${isFinite(ms[k])?ms[k].toFixed(6):''}\n`);
   }
   const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'})),download:'ScalingResults.csv'});
@@ -1320,7 +1468,7 @@ function redraw(){
   const layout={
     title:{text:`Response Spectra   [${n} records]`,font:{family:'IBM Plex Sans',size:14,color:'#1a1f2e'}},
     xaxis:{title:'Period  T  (s)',gridcolor:'#e5e8f0',zeroline:false,titlefont:{family:'IBM Plex Sans'}},
-    yaxis:{title:'Sₐ',gridcolor:'#e5e8f0',zeroline:false,titlefont:{family:'IBM Plex Sans'}},
+    yaxis:{title:'Sₐ  (g)',gridcolor:'#e5e8f0',zeroline:false,titlefont:{family:'IBM Plex Sans'}},
     shapes,annotations:anns,
     legend:{font:{family:'IBM Plex Sans',size:9},orientation:'v',bgcolor:'rgba(255,255,255,0.85)'},
     margin:{l:58,r:16,t:48,b:52},
