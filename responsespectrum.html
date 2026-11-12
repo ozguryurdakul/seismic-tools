@@ -94,7 +94,7 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
       </div>
       <div class="sep">Ground Motion Records</div>
       <div class="info" style="color:#777;font-style:italic;margin-bottom:6px;">
-        CSV or text files — headers auto-skipped. Set dt, units and component per file.
+        Text / CSV / AFAD .asc / PEER .AT2 — headers are skipped automatically. dt and units are read from the header or the time column when available.
       </div>
       <button class="btn btn-green" onclick="addFiles()">➕  Add File(s)…</button>
       <input type="file" id="file-inp" accept=".csv,.txt,.asc,.dat,.AT2" multiple style="display:none" onchange="onFiles()">
@@ -123,7 +123,7 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
         </select>
       </div>
       <div id="mode-info" class="info ok" style="font-size:11px;margin-top:2px;">
-        Select one file (1D) or check EW + NS pair (2D).
+        1D: tick one file in the table (not needed if only one is loaded).
       </div>
 
       <div class="sep" style="margin-top:10px;"></div>
@@ -176,7 +176,7 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
       <div class="sep">Period Range</div>
       <div class="row">
         <span class="lbl bold" style="min-width:65px;">T min (s):</span>
-        <input type="number" id="Tmin" class="w70" value="0.02" min="0.001" step="0.01">
+        <input type="number" id="Tmin" class="w70" value="0.01" min="0.001" step="0.01">
       </div>
       <div class="row">
         <span class="lbl bold" style="min-width:65px;">T max (s):</span>
@@ -184,7 +184,7 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
       </div>
       <div class="row">
         <span class="lbl bold" style="min-width:65px;">N periods:</span>
-        <input type="number" id="NT" class="w70" value="2000" min="10" max="5000" step="100">
+        <input type="number" id="NT" class="w70" value="2000" min="10" max="10000" step="100">
       </div>
 
       <div class="sep">Plot Axis Limits</div>
@@ -207,7 +207,7 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
   <div id="footer">Özgür Yurdakul · University of Pardubice · CC BY-NC-SA 4.0</div>
 </div>
 
-<!-- Right: 3 plots -->
+<!-- Right: record strip + 3 spectrum plots -->
 <div id="plot-panel">
   <div id="plt-rec" style="height:110px;flex-shrink:0;"></div>
   <div class="plot-div" id="plt-sa"></div>
@@ -226,7 +226,7 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
       <div class="prev-wrap"><table id="prev-tbl"></table></div>
       <div class="field-row">
         <label>Time step dt (s) *</label>
-        <input type="number" class="modal-inp" id="m-dt" value="0.005" min="0.0001" step="0.001">
+        <input type="number" class="modal-inp" id="m-dt" value="0.005" min="0" step="any">
       </div>
       <div id="m-dt-hint" style="font-size:10px;color:#555;font-style:italic;margin:-4px 0 8px 0;"></div>
       <div class="field-row">
@@ -234,10 +234,11 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
         <select class="modal-sel" id="m-units">
           <option value="cm/s2">cm/s²</option>
           <option value="m/s2">m/s²</option>
+          <option value="mm/s2">mm/s²</option>
           <option value="g">g</option>
         </select>
       </div>
-      <!-- Single-column: component only -->
+      <!-- One acceleration column: component only -->
       <div class="field-row" id="single-comp-row">
         <label>Component</label>
         <select class="modal-sel" id="m-comp-single">
@@ -245,9 +246,9 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
           <option value="NS">N-S</option>
           <option value="UD">U-D</option>
         </select>
-        <span style="font-size:10px;color:#888;font-style:italic;">(single-column — 1D only)</span>
+        <span style="font-size:10px;color:#888;font-style:italic;">(one acceleration column — 1D)</span>
       </div>
-      <!-- Multi-column: Mode selector -->
+      <!-- Two or more acceleration columns: Mode selector -->
       <div class="field-row" id="mode-row" style="display:none;">
         <label>Mode</label>
         <select class="modal-sel" id="m-mode" onchange="onModalModeChange()">
@@ -288,10 +289,15 @@ input.modal-inp{font-family:'IBM Plex Mono',monospace;font-size:12px;border:1px 
 //  STATE
 // ══════════════════════════════════════════════════════════════════════
 const S = {
-  files: [],    // [{name, ag:[], dt, units, comp, ncols, col}]
+  files: [],    // [{name, ag:[] in m/s², dt, units, comp}]
   results: null,
   axLimits: null,
 };
+const G = 9.80665;
+const UNIT_FACTOR = {'m/s2':1, 'cm/s2':0.01, 'mm/s2':0.001, 'g':G};      // file units → m/s²
+const UNIT_LABEL  = {'m/s2':'m/s²', 'cm/s2':'cm/s²', 'mm/s2':'mm/s²', 'g':'g'};
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sig = (v,n=4) => Number(v.toPrecision(n));
 
 // ══════════════════════════════════════════════════════════════════════
 //  TABS
@@ -304,73 +310,51 @@ function switchTab(idx,btn){
 // ══════════════════════════════════════════════════════════════════════
 //  FILE PARSER
 // ══════════════════════════════════════════════════════════════════════
-// Check if column j is a uniform time vector → return dt or null
-function timeColumnDt(rows, j){
-  const n=rows.length; if(n<10) return null;
-  const t0=rows[0][j], dt=(rows[n-1][j]-t0)/(n-1);
-  if(!(dt>0)) return null;
-  for(let i=1;i<n;i++){
-    if(rows[i][j]<=rows[i-1][j]) return null;
-    if(Math.abs(rows[i][j]-(t0+i*dt))>0.25*dt) return null;
-  }
-  return parseFloat(dt.toFixed(10));
-}
-
-// Check uniformity and return max deviation ratio (for warning)
-function timeColumnUniformity(rows, j){
-  const n=rows.length; if(n<2) return 0;
-  const dt=(rows[n-1][j]-rows[0][j])/(n-1);
-  if(!(dt>0)) return Infinity;
-  let maxDev=0;
-  for(let i=1;i<n;i++){
-    const dev=Math.abs(rows[i][j]-rows[i-1][j]-dt)/dt;
-    if(dev>maxDev) maxDev=dev;
-  }
-  return maxDev;
-}
-
+// Reads text / CSV / AFAD .asc / PEER .AT2.  A line is data only if every
+// token on it is a number; "KEY: value" header lines are collected in meta.
 function parseRaw(text){
-  const dataLineRe=/^[\s\d+\-.,eE]+$/;
   const lines=text.replace(/\r/g,'').split('\n');
-  const rows=[], meta={};
-  let nc=0;
-
-  // PEER AT2 detection
-  let at2=null;
+  const meta={};
+  // PEER NGA .AT2: "NPTS=  7990, DT=   .0050 SEC", then several values per row, units g
+  const at2=text.match(/NPTS\s*=\s*(\d+)\s*,\s*DT\s*=\s*([0-9.Ee+-]+)/i);
+  const dataLineRe=/^[\s\d+\-.,;eE]+$/;
+  const cand=[], flat=[];
+  let dtEq=null;
   for(const line of lines){
-    const m=line.match(/NPTS=\s*(\d+).*DT=\s*([\d.]+)/i);
-    if(m){at2=m;break;}
+    const L=line.trim();
+    if(!L) continue;
+    const kv=L.match(/^([A-Za-z_/^0-9\-]+)\s*:\s*(.*)$/);
+    if(kv){meta[kv[1].toUpperCase()]=kv[2].trim();continue;}
+    if(L.includes(':')||!dataLineRe.test(L)){
+      // free-text header line — accept "DT = 0.005"
+      if(dtEq===null){
+        const m=L.match(/\bDT\s*=\s*(\d*\.?\d+(?:[eE][+-]?\d+)?)/i);
+        if(m) dtEq=parseFloat(m[1]);
+      }
+      continue;
+    }
+    // with ';' as the separator a ',' is a decimal comma (European CSV)
+    const toks=(L.includes(';')?L.replace(/,/g,'.').split(/[\s;]+/):L.split(/[\s,]+/)).filter(s=>s.length);
+    const nums=toks.map(Number);
+    if(!nums.length||nums.some(v=>!isFinite(v))) continue;
+    if(at2) flat.push(...nums); else cand.push(nums);
   }
   if(at2){
-    const flat=[];
-    for(const line of lines){
-      const L=line.trim();
-      if(!L||/[A-Za-z]/.test(L)) continue;
-      L.split(/\s+/).map(Number).filter(v=>isFinite(v)).forEach(v=>flat.push(v));
-    }
     const npts=parseInt(at2[1]);
     return {rows:flat.slice(0,npts).map(v=>[v]),ncols:1,dt:parseFloat(at2[2]),units:'g',fmt:'PEER .AT2'};
   }
 
-  for(const line of lines){
-    const L=line.trim();
-    if(!L) continue;
-    // Parse header key:value pairs
-    const kv=L.match(/^([A-Za-z_/^0-9\-]+)\s*:\s*(.*)$/);
-    if(kv){meta[kv[1].toUpperCase()]=kv[2].trim();continue;}
-    if(L.includes(':')||!dataLineRe.test(L)) continue;
-    const nums=L.split(/\s+/).map(Number).filter(v=>isFinite(v));
-    if(!nums.length) continue;
-    if(nc===0) nc=nums.length;
-    if(nums.length===nc) rows.push(nums);
-  }
+  // number of columns = the most common row width (ignores odd numeric header lines)
+  const count={};
+  for(const r of cand) count[r.length]=(count[r.length]||0)+1;
+  let nc=0;
+  for(const k in count) if(count[k]>(count[nc]||0)) nc=+k;
+  const rows=cand.filter(r=>r.length===nc);
 
-  // Auto-detect dt from header
   const out={rows,ncols:nc,dt:null,units:null,fmt:'text'};
-  const dtKey=['SAMPLING_INTERVAL_S','DT','SAMPLING_INTERVAL'].find(k=>meta[k]&&isFinite(parseFloat(meta[k])));
+  const dtKey=['SAMPLING_INTERVAL_S','DT','SAMPLING_INTERVAL'].find(k=>meta[k]&&parseFloat(meta[k])>0);
   if(dtKey) out.dt=parseFloat(meta[dtKey]);
-
-  // Auto-detect units from header
+  else if(dtEq>0) out.dt=dtEq;
   if(meta.UNITS){
     const u=meta.UNITS.toLowerCase().replace(/\s/g,'');
     if(/^cm\/s(\^?2|²)$/.test(u)||u==='gal') out.units='cm/s2';
@@ -381,10 +365,83 @@ function parseRaw(text){
   return out;
 }
 
+// number of decimals a value was written with (0.0039 → 4)
+function decimalsOf(v){
+  const m=String(v).match(/^-?\d+(?:\.(\d+))?(?:e([+-]?\d+))?$/);
+  if(!m) return 0;
+  return Math.max(0,(m[1]?m[1].length:0)-(m[2]?parseInt(m[2]):0));
+}
+
+// Is column j a time column?  An acceleration trace is never strictly
+// increasing; a time (or counter) column always is.
+//   null                          → not a time column
+//   {kind:'time',dt,dev,jitter}   → uniform, dt can be used. dev = largest distance of a
+//                                   sample from the even grid t0+i·dt, as a fraction of dt
+//   {kind:'irregular',dt,min,max} → increasing but not uniform (dt = median step)
+//   {kind:'counter',dt}           → step ≥ 1: a sample counter or a time in ms, not seconds
+function analyseTimeColumn(rows,j){
+  const n=rows.length; if(n<10) return null;
+  for(let i=1;i<n;i++) if(!(rows[i][j]>rows[i-1][j])) return null;
+  const t0=rows[0][j], dt=(rows[n-1][j]-t0)/(n-1);
+  const steps=new Array(n-1);
+  let dev=0, min=Infinity, max=0, dec=0;
+  for(let i=1;i<n;i++){
+    const st=rows[i][j]-rows[i-1][j];
+    steps[i-1]=st; if(st<min)min=st; if(st>max)max=st;
+    dev=Math.max(dev,Math.abs(rows[i][j]-(t0+i*dt)));
+  }
+  for(let i=0;i<Math.min(n,200);i++) dec=Math.max(dec,decimalsOf(rows[i][j]));
+  const q=1.0001*Math.pow(10,-dec);          // what rounding of the printed values can explain
+  if(dev<=Math.max(0.25*dt,q)){
+    if(dt>=1) return {kind:'counter',dt};
+    return {kind:'time',dt:sig(dt,8),dev:dev/dt,jitter:dev>Math.max(0.01*dt,q)};
+  }
+  steps.sort((a,b)=>a-b);
+  return {kind:'irregular',dt:sig(steps[(n-1)>>1],8),min,max};
+}
+
+// Works out dt, the acceleration columns and the hint lines for the file dialog.
+//   dt: uniform time column → header → (median step of an irregular time column) → default
+//   default: 0.005 s for a single column, 0.01 s otherwise
+function inspectFile(parsed){
+  const msgs=[], say=(lvl,txt)=>msgs.push({lvl,txt});
+  const nc=parsed.ncols, timeCols=[];
+  let dt=null, irregular=null;
+  if(nc>1){
+    for(let j=0;j<nc;j++){
+      const a=analyseTimeColumn(parsed.rows,j);
+      if(!a) continue;
+      timeCols.push(j);
+      if(a.kind==='time'){
+        if(dt!==null) continue;
+        dt=a.dt;
+        say('ok',`✔ dt = ${a.dt} s computed from Col ${j+1} (time column)`);
+        if(a.jitter) say('err',`⚠ Col ${j+1} is not perfectly uniform — samples are up to ${(a.dev*100).toFixed(1)}% of dt away from an even grid`);
+      } else if(a.kind==='irregular'){
+        if(!irregular) irregular=a;
+        say('err',`✖ Col ${j+1} looks like a time column but its spacing is not uniform (steps ${sig(a.min)} – ${sig(a.max)} s)`);
+      } else {
+        say('warn',`⚠ Col ${j+1} increases by ${sig(a.dt)} per row — a sample counter or a time in ms; not used for dt`);
+      }
+    }
+  }
+  if(dt===null){
+    if(parsed.dt){ dt=parsed.dt; say('ok',`✔ dt = ${parsed.dt} s read from header`); }
+    else if(irregular&&irregular.dt<1){ dt=irregular.dt; say('err',`⚠ dt set to the median step ${irregular.dt} s — check it before computing`); }
+    else { dt=nc===1?0.005:0.01; say('warn',`⚠ dt not found in the file — default ${dt} s used, please check`); }
+  }
+  if(parsed.units) say('ok',`✔ units = ${UNIT_LABEL[parsed.units]} read from header`);
+  let accCols=[];
+  for(let j=0;j<nc;j++) if(!timeCols.includes(j)) accCols.push(j);
+  if(!accCols.length) accCols=Array.from({length:nc},(_,j)=>j);
+  return {dt,accCols,msgs};
+}
+
 // ══════════════════════════════════════════════════════════════════════
 //  MODAL
 // ══════════════════════════════════════════════════════════════════════
 let _modalResolve=null, _modalRaw=null;
+const HINT_COLOR={ok:'#1a7a36',warn:'#9a6200',err:'#cc0000',note:'#666'};
 
 function showModal(fname, parsed){
   return new Promise(res=>{
@@ -397,124 +454,59 @@ function showModal(fname, parsed){
     for(let r=0;r<n;r++) h+='<tr>'+parsed.rows[r].map(v=>`<td>${v}</td>`).join('')+'</tr>';
     document.getElementById('prev-tbl').innerHTML=h+'</tbody>';
 
-    // Auto-fill units if detected from header
-    if(parsed.units) document.getElementById('m-units').value = parsed.units;
+    // dt and units: from the file when possible, otherwise the defaults
+    const info=inspectFile(parsed);
+    parsed.accCols=info.accCols;
+    document.getElementById('m-dt').value=info.dt;
+    document.getElementById('m-units').value=parsed.units||'cm/s2';
 
-    const hints=[], warnings=[];
-    let detectedDt=null, dtSource='';
+    // Column choices: acceleration columns only (a time column is never offered)
+    const acc=info.accCols, multi=acc.length>1;
+    const opts=acc.map(j=>`<option value="${j}">Col ${j+1}</option>`).join('');
+    ['m-col','m-col-ew','m-col-ns'].forEach(id=>document.getElementById(id).innerHTML=opts);
+    document.getElementById('m-col').value=acc[0];
+    document.getElementById('m-col-ew').value=acc[0];
+    document.getElementById('m-col-ns').value=acc[Math.min(1,acc.length-1)];
+    if(multi) info.msgs.push({lvl:'note',txt:`ℹ 1D reads Col ${acc[0]+1}. To load two columns choose Mode = 2D (same file).`});
 
-    if(parsed.ncols===1){
-      // Single column — no time column possible
-      detectedDt = parsed.dt || 0.005;
-      dtSource = parsed.dt ? `header (${parsed.dt} s)` : 'default (0.005 s)';
-      if(parsed.dt) hints.push(`✔ dt = ${parsed.dt} s read from header`);
-      else hints.push(`⚠ dt not found — using default 0.005 s`);
-    } else {
-      // Multi-column — try to find time column
-      const tDts=parsed.rows[0].map((_,j)=>timeColumnDt(parsed.rows,j));
-      const tCol=tDts.findIndex(v=>v!==null);
+    document.getElementById('m-dt-hint').innerHTML=info.msgs.map(m=>
+      `<span style="color:${HINT_COLOR[m.lvl]}">${m.txt}</span>`).join('<br>');
 
-      if(tCol>=0){
-        // Found a uniform time column
-        detectedDt=tDts[tCol];
-        dtSource=`time column (Col ${tCol+1})`;
-        hints.push(`✔ dt = ${detectedDt} s computed from Col ${tCol+1} (time column)`);
-
-        // Check uniformity warning threshold (>1%)
-        const dev=timeColumnUniformity(parsed.rows,tCol);
-        if(dev>0.01) warnings.push(`⚠ Time column Col ${tCol+1} has max spacing deviation of ${(dev*100).toFixed(1)}% — may not be perfectly uniform`);
-
-      } else {
-        // No time column found — try header then default
-        detectedDt = parsed.dt || 0.01;
-        if(parsed.dt){
-          dtSource=`header (${parsed.dt} s)`;
-          hints.push(`✔ dt = ${parsed.dt} s read from header`);
-        } else {
-          dtSource='default (0.01 s)';
-          hints.push(`⚠ No time column or header dt found — using default 0.01 s`);
-        }
-
-        // Check if any column was close to uniform but failed the 25% threshold
-        parsed.rows[0].forEach((_,j)=>{
-          const dev=timeColumnUniformity(parsed.rows,j);
-          if(dev>0&&dev<=1) warnings.push(`⚠ Col ${j+1} looks like a time column but spacing is non-uniform (max deviation ${(dev*100).toFixed(1)}%) — check dt manually`);
-        });
-      }
-
-      if(parsed.units) hints.push(`✔ units = ${parsed.units} read from header`);
-    }
-
-    document.getElementById('m-dt').value = detectedDt;
-
-    const hintEl=document.getElementById('m-dt-hint');
-    if(hintEl){
-      const allMsgs=[...hints,...warnings];
-      hintEl.innerHTML=allMsgs.map((m,i)=>
-        `<span style="color:${i>=hints.length?'#cc0000':'#1a7a36'}">${m}</span>`
-      ).join('<br>');
-    }
-
-    // Column options
-    const opts=parsed.rows[0].map((_,j)=>`<option value="${j}">Col ${j+1}</option>`).join('');
-    document.getElementById('m-col').innerHTML=opts;
-    document.getElementById('m-col-ew').innerHTML=opts;
-    document.getElementById('m-col-ns').innerHTML=opts;
-    // Default: col2 for single/EW, col3 for NS (if available)
-    if(parsed.ncols>1){
-      document.getElementById('m-col').value='1';
-      document.getElementById('m-col-ew').value='1';
-      document.getElementById('m-col-ns').value=Math.min(2,parsed.ncols-1).toString();
-    }
-
-    // Show correct rows based on number of columns
-    const single=parsed.ncols===1;
-    document.getElementById('single-comp-row').style.display=single?'':'none';
-    document.getElementById('mode-row').style.display=single?'none':'';
-    document.getElementById('comp-row').style.display=single?'none':'';
-    document.getElementById('col1d-row').style.display=single?'none':'';
-    document.getElementById('col2d-row').style.display='none';
-    // Reset mode to 1D for multi-column
-    if(!single){
-      document.getElementById('m-mode').value='1D';
-      document.getElementById('comp-row').style.display='';
-      document.getElementById('col1d-row').style.display='none';
-    }
+    // one acceleration column → Component only;  two or more → Mode (1D / 2D same file)
+    document.getElementById('single-comp-row').style.display=multi?'none':'';
+    document.getElementById('mode-row').style.display=multi?'':'none';
+    document.getElementById('m-mode').value='1D';
+    onModalModeChange();
 
     document.getElementById('file-modal').classList.add('open');
   });
 }
 
 function onModalModeChange(){
-  const is2D=document.getElementById('m-mode').value==='2D';
-  document.getElementById('comp-row').style.display=is2D?'none':'';
-  document.getElementById('col1d-row').style.display='none';  // never shown in 1D
+  const multi=!!_modalRaw&&_modalRaw.accCols.length>1;
+  const is2D=multi&&document.getElementById('m-mode').value==='2D';
+  document.getElementById('comp-row').style.display=(multi&&!is2D)?'':'none';
+  document.getElementById('col1d-row').style.display='none';   // 1D always reads the first acceleration column
   document.getElementById('col2d-row').style.display=is2D?'':'none';
 }
 
 function confirmModal(){
-  const dt=parseFloat(document.getElementById('m-dt').value)||0;
-  if(dt<=0){alert('Please enter a valid time step dt > 0.');return;}
+  const dt=parseFloat(document.getElementById('m-dt').value);
+  if(!(dt>0)){alert('Please enter a valid time step dt > 0.');return;}
   const units=document.getElementById('m-units').value;
-  const single=_modalRaw.ncols===1;
+  const acc=_modalRaw.accCols;
 
   let result;
-  if(single){
-    // Single column file
-    const comp=document.getElementById('m-comp-single').value;
-    result={dt,units,comp,mode:'1D',col:0,colEW:0,colNS:0};
+  if(acc.length<2){
+    result={dt,units,mode:'1D',comp:document.getElementById('m-comp-single').value,col:acc[0]};
+  } else if(document.getElementById('m-mode').value==='2D'){
+    const colEW=parseInt(document.getElementById('m-col-ew').value);
+    const colNS=parseInt(document.getElementById('m-col-ns').value);
+    if(colEW===colNS){alert('E-W and N-S columns must be different.');return;}
+    result={dt,units,mode:'2D',colEW,colNS};
   } else {
-    const mode=document.getElementById('m-mode').value;
-    if(mode==='2D'){
-      const colEW=parseInt(document.getElementById('m-col-ew').value);
-      const colNS=parseInt(document.getElementById('m-col-ns').value);
-      if(colEW===colNS){alert('E-W and N-S columns must be different.');return;}
-      result={dt,units,comp:'2D',mode:'2D',col:colEW,colEW,colNS};
-    } else {
-      const comp=document.getElementById('m-comp').value;
-      const col=parseInt(document.getElementById('m-col').value);
-      result={dt,units,comp,mode:'1D',col,colEW:col,colNS:col};
-    }
+    result={dt,units,mode:'1D',comp:document.getElementById('m-comp').value,
+            col:parseInt(document.getElementById('m-col').value)};
   }
   document.getElementById('file-modal').classList.remove('open');
   if(_modalResolve){_modalResolve(result);_modalResolve=null;}
@@ -530,30 +522,28 @@ function cancelModal(){
 function addFiles(){document.getElementById('file-inp').click();}
 
 async function onFiles(){
-  const files=Array.from(document.getElementById('file-inp').files);
+  const inp=document.getElementById('file-inp');
+  const files=Array.from(inp.files);
   for(const f of files){
-    const text=await f.text();
-    const parsed=parseRaw(text);
-    if(!parsed.rows.length){alert('No numeric data in '+f.name);continue;}
+    let parsed;
+    try{ parsed=parseRaw(await f.text()); }
+    catch(e){ alert('Cannot read '+f.name+': '+e.message); continue; }
+    if(parsed.rows.length<2){alert('No numeric data found in '+f.name);continue;}
     const sel=await showModal(f.name,parsed);
     if(!sel) continue;
 
+    const k=UNIT_FACTOR[sel.units];                      // → m/s²
+    const column=j=>parsed.rows.map(r=>r[j]*k);
     if(sel.mode==='2D'){
-      // Add two entries: EW and NS from same file
-      let agEW=parsed.rows.map(r=>r[sel.colEW]);
-      let agNS=parsed.rows.map(r=>r[sel.colNS]);
-      if(sel.units==='cm/s2'){agEW=agEW.map(v=>v*0.01);agNS=agNS.map(v=>v*0.01);}
-      else if(sel.units==='g'){agEW=agEW.map(v=>v*9.80665);agNS=agNS.map(v=>v*9.80665);}
-      S.files.push({name:f.name.replace(/\.[^.]+$/,'')+'_EW', ag:agEW, dt:sel.dt, units:sel.units, comp:'EW', ncols:parsed.ncols});
-      S.files.push({name:f.name.replace(/\.[^.]+$/,'')+'_NS', ag:agNS, dt:sel.dt, units:sel.units, comp:'NS', ncols:parsed.ncols});
+      // two records (E-W and N-S) from the same file
+      const stem=f.name.replace(/\.[^.]+$/,'');
+      S.files.push({name:stem+'_EW',ag:column(sel.colEW),dt:sel.dt,units:sel.units,comp:'EW'});
+      S.files.push({name:stem+'_NS',ag:column(sel.colNS),dt:sel.dt,units:sel.units,comp:'NS'});
     } else {
-      let ag=parsed.rows.map(r=>r[sel.col]);
-      if(sel.units==='cm/s2') ag=ag.map(v=>v*0.01);
-      else if(sel.units==='g') ag=ag.map(v=>v*9.80665);
-      S.files.push({name:f.name, ag, dt:sel.dt, units:sel.units, comp:sel.comp, ncols:parsed.ncols});
+      S.files.push({name:f.name,ag:column(sel.col),dt:sel.dt,units:sel.units,comp:sel.comp});
     }
   }
-  document.getElementById('file-inp').value='';
+  inp.value='';
   refreshTable();
   updateFileStatus();
 }
@@ -561,19 +551,19 @@ async function onFiles(){
 // ══════════════════════════════════════════════════════════════════════
 //  TABLE
 // ══════════════════════════════════════════════════════════════════════
+const selectedRows=new Set();
+
 function refreshTable(){
   document.getElementById('file-body').innerHTML=S.files.map((f,i)=>`
     <tr class="${selectedRows.has(i)?'sel-row':''}">
       <td><input type="checkbox" class="fcb" data-i="${i}" ${selectedRows.has(i)?'checked':''}
           onchange="onRowCheck(${i},this.checked)"></td>
-      <td title="${f.name}" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.name}</td>
+      <td title="${esc(f.name)}" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.name)}</td>
       <td style="font-family:monospace;">${f.dt}</td>
-      <td style="font-size:10px;">${f.units}</td>
+      <td style="font-size:10px;">${UNIT_LABEL[f.units]}</td>
       <td><span class="badge badge-${f.comp.toLowerCase()}">${f.comp}</span></td>
     </tr>`).join('');
 }
-
-const selectedRows=new Set();
 function onRowCheck(i,checked){
   if(checked) selectedRows.add(i); else selectedRows.delete(i);
   refreshTable();
@@ -587,6 +577,7 @@ function removeSelected(){
   const rm=[...selectedRows].sort((a,b)=>b-a);
   rm.forEach(i=>S.files.splice(i,1));
   selectedRows.clear();
+  document.getElementById('sel-all').checked=false;
   refreshTable(); updateFileStatus();
 }
 function updateFileStatus(){
@@ -596,10 +587,10 @@ function updateFileStatus(){
 }
 
 function onModeChange(){
-  const isEC8=document.getElementById('mode-sel').value==='2D';
-  document.getElementById('mode-info').textContent=isEC8
-    ?'Check exactly one EW file and one NS file.'
-    :'Select (check) one file to compute 1D spectrum.';
+  const is2D=document.getElementById('mode-sel').value==='2D';
+  document.getElementById('mode-info').textContent=is2D
+    ?'2D: uses the E-W + N-S pair — tick the two files if several are loaded.'
+    :'1D: tick one file in the table (not needed if only one is loaded).';
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -694,7 +685,7 @@ function runMethod(meth,ag,dt,T,xi){
   if(meth==='nm') return nmSpectrum(ag,dt,T,xi);
   if(meth==='nj') return njSpectrum(ag,dt,T,xi);
   if(meth==='dh') return dhSpectrum(ag,dt,T,xi);
-  return njSpectrum(ag,dt,T,xi);
+  return nmSpectrum(ag,dt,T,xi);
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -704,116 +695,102 @@ const C_EW='#0000b3',C_NS='#cc0000',C_GM='#7a00b0';
 const C_NM='#0000b3',C_NJ='#cc0000',C_DH='#006600';
 const METH_NAMES={nm:'Newmark-β',nj:'Nigam-Jennings',dh:"Duhamel's Integral"};
 
-function compute(){
-  const mode=document.getElementById('mode-sel').value;
-  const meth=document.getElementById('method-sel').value;
-  const xi=parseFloat(document.getElementById('xi').value)||0.05;
-  const Tmin=parseFloat(document.getElementById('Tmin').value)||0.02;
-  const Tmax=parseFloat(document.getElementById('Tmax').value)||4.0;
-  const NT=parseInt(document.getElementById('NT').value)||200;
-  const T=logspace(Tmin,Tmax,NT);
+function setStatus(txt,cls){
+  const el=document.getElementById('comp-status');
+  el.textContent=txt; el.className='info '+cls;
+}
 
-  const status=document.getElementById('comp-status');
+// Settings tab → validated numbers, or an error text
+function readSettings(){
+  const num=id=>parseFloat(document.getElementById(id).value);
+  const s={mode:document.getElementById('mode-sel').value,
+           meth:document.getElementById('method-sel').value,
+           xi:num('xi'),Tmin:num('Tmin'),Tmax:num('Tmax'),NT:Math.round(num('NT'))};
+  if(!(s.xi>=0&&s.xi<=0.99)) return 'Damping ratio ξ must be between 0 and 0.99.';
+  if(!(s.Tmin>0)) return 'T min must be greater than 0.';
+  if(!(s.Tmax>s.Tmin)) return 'T max must be greater than T min.';
+  if(!(s.NT>=10&&s.NT<=10000)) return 'N periods must be between 10 and 10000.';
+  return s;
+}
 
+// Which record(s) to use → [file] for 1D, [EW, NS] for 2D, or an error text
+function pickFiles(mode){
+  if(!S.files.length) return 'Load a file first.';
+  const ticked=[...selectedRows].sort((a,b)=>a-b).map(i=>S.files[i]).filter(Boolean);
   if(mode==='1D'){
-    // Need exactly 1 file (checked, or if only 1 file total)
-    const sel=[...selectedRows];
-    let idx=-1;
-    if(S.files.length===1) idx=0;
-    else if(sel.length===1) idx=sel[0];
-    else{status.textContent='⚠ Select exactly 1 file for 1D.';status.className='info err';return;}
-
-    const f=S.files[idx];
-    if(f.dt<=0){status.textContent='⚠ dt not set for this file.';status.className='info err';return;}
-
-    status.textContent='Computing…';status.className='info warn';
-
-    setTimeout(()=>{
-      const traces_sa=[],traces_sv=[],traces_sd=[];
-      if(meth==='all'){
-        const meths=['nm','nj','dh'];
-        const cols=[C_NM,C_NJ,C_DH];
-        meths.forEach((m,i)=>{
-          const r=runMethod(m,f.ag,f.dt,T,xi);
-          const Sa_g=Array.from(r.Sa).map(v=>v/9.80665);
-          const Sv_cm=Array.from(r.Sv).map(v=>v*100);
-          const Sd_cm=Array.from(r.Sd).map(v=>v*100);
-          const nm=METH_NAMES[m];
-          traces_sa.push({x:T,y:Sa_g,mode:'lines',name:nm,line:{color:cols[i],width:1.5}});
-          traces_sv.push({x:T,y:Sv_cm,mode:'lines',name:nm,line:{color:cols[i],width:1.5}});
-          traces_sd.push({x:T,y:Sd_cm,mode:'lines',name:nm,line:{color:cols[i],width:1.5}});
-        });
-        S.results={T,mode:'1D',meth:'all'};
-      } else {
-        const r=runMethod(meth,f.ag,f.dt,T,xi);
-        const Sa_g=Array.from(r.Sa).map(v=>v/9.80665);
-        const Sv_cm=Array.from(r.Sv).map(v=>v*100);
-        const Sd_cm=Array.from(r.Sd).map(v=>v*100);
-        const lbl=`${f.name} [${f.comp}] — ξ=${xi}`;
-        traces_sa.push({x:T,y:Sa_g,mode:'lines',name:lbl,line:{color:C_EW,width:2}});
-        traces_sv.push({x:T,y:Sv_cm,mode:'lines',name:lbl,line:{color:C_EW,width:2}});
-        traces_sd.push({x:T,y:Sd_cm,mode:'lines',name:lbl,line:{color:C_EW,width:2}});
-        S.results={T,Sa:Sa_g,Sv:Sv_cm,Sd:Sd_cm,mode:'1D',meth};
-      }
-      plotSpectra(traces_sa,traces_sv,traces_sd,
-        `PSa (g) — ξ=${xi} — ${meth==='all'?'All Methods':METH_NAMES[meth]}`,
-        'PSa  (g)','PSv  (cm/s)','Sd  (cm)');
-      status.textContent=`✔ Done. ${T.length} periods, dt=${f.dt} s, N=${f.ag.length} steps.`;
-      status.className='info ok';
-      plotRecord([f]);
-    },30);
-
-  } else {
-    // 2D mode: need EW + NS
-    const ewFiles=S.files.filter(f=>f.comp==='EW');
-    const nsFiles=S.files.filter(f=>f.comp==='NS');
-    // Use checked files if available
-    const sel=[...selectedRows];
-    let fEW=null,fNS=null;
-    if(sel.length===2){
-      const a=S.files[sel[0]],b=S.files[sel[1]];
-      if(a.comp==='EW'&&b.comp==='NS'){fEW=a;fNS=b;}
-      else if(a.comp==='NS'&&b.comp==='EW'){fEW=b;fNS=a;}
-    }
-    if(!fEW&&ewFiles.length>=1) fEW=ewFiles[0];
-    if(!fNS&&nsFiles.length>=1) fNS=nsFiles[0];
-
-    if(!fEW||!fNS){
-      status.textContent='⚠ Need at least one EW and one NS file. Assign components in file settings.';
-      status.className='info err';return;
-    }
-    if(fEW.dt<=0||fNS.dt<=0){status.textContent='⚠ Check dt values.';status.className='info err';return;}
-
-    status.textContent='Computing 2D geometric mean…';status.className='info warn';
-
-    setTimeout(()=>{
-      const mUsed=meth==='all'?'nj':meth;
-      const rEW=runMethod(mUsed,fEW.ag,fEW.dt,T,xi);
-      const rNS=runMethod(mUsed,fNS.ag,fNS.dt,T,xi);
-      const Sa_EW=Array.from(rEW.Sa).map(v=>v/9.80665);
-      const Sa_NS=Array.from(rNS.Sa).map(v=>v/9.80665);
-      const Sa_GM=Sa_EW.map((v,i)=>Math.sqrt(v*Sa_NS[i]));
-      const Sv_EW=Array.from(rEW.Sv).map(v=>v*100);
-      const Sv_NS=Array.from(rNS.Sv).map(v=>v*100);
-      const Sv_GM=Sv_EW.map((v,i)=>Math.sqrt(v*Sv_NS[i]));
-      const Sd_EW=Array.from(rEW.Sd).map(v=>v*100);
-      const Sd_NS=Array.from(rNS.Sd).map(v=>v*100);
-      const Sd_GM=Sd_EW.map((v,i)=>Math.sqrt(v*Sd_NS[i]));
-
-      const mk=(y,name,col,dash='solid')=>({x:T,y,mode:'lines',name,line:{color:col,width:2,dash}});
-      const ts_sa=[mk(Sa_EW,'E-W',C_EW),mk(Sa_NS,'N-S',C_NS),mk(Sa_GM,'Geom. Mean',C_GM,'dash')];
-      const ts_sv=[mk(Sv_EW,'E-W',C_EW),mk(Sv_NS,'N-S',C_NS),mk(Sv_GM,'Geom. Mean',C_GM,'dash')];
-      const ts_sd=[mk(Sd_EW,'E-W',C_EW),mk(Sd_NS,'N-S',C_NS),mk(Sd_GM,'Geom. Mean',C_GM,'dash')];
-
-      S.results={T,Sa_EW,Sa_NS,Sa_GM,Sv_EW,Sv_NS,Sv_GM,Sd_EW,Sd_NS,Sd_GM,mode:'2D',meth:mUsed};
-      plotSpectra(ts_sa,ts_sv,ts_sd,
-        `PSa (g) — ξ=${xi} — 2D Geometric Mean [${METH_NAMES[mUsed]||mUsed}]`,
-        'PSa  (g)','PSv  (cm/s)','Sd  (cm)',true);
-      status.textContent=`✔ Done. 2D GM computed. EW: ${fEW.name}  NS: ${fNS.name}`;
-      status.className='info ok';
-      plotRecord([fEW,fNS]);
-    },30);
+    if(S.files.length===1) return [S.files[0]];
+    if(ticked.length===1) return ticked;
+    return `Tick exactly one file in the table for 1D (${ticked.length} ticked).`;
   }
+  if(ticked.length===2){
+    const e=ticked.find(f=>f.comp==='EW'), n=ticked.find(f=>f.comp==='NS');
+    return (e&&n)?[e,n]:'The two ticked files must be one E-W and one N-S.';
+  }
+  const ew=S.files.filter(f=>f.comp==='EW'), ns=S.files.filter(f=>f.comp==='NS');
+  if(ew.length===1&&ns.length===1) return [ew[0],ns[0]];
+  if(!ew.length||!ns.length) return '2D needs one E-W and one N-S record.';
+  return 'Several E-W / N-S records are loaded — tick the pair to use (one E-W, one N-S).';
+}
+
+// m/s², m/s, m  →  g, cm/s, cm
+function toUnits(r){
+  return {Sa:Array.from(r.Sa,v=>v/G),Sv:Array.from(r.Sv,v=>v*100),Sd:Array.from(r.Sd,v=>v*100)};
+}
+
+function compute(){
+  const s=readSettings();
+  if(typeof s==='string'){setStatus('⚠ '+s,'err');return;}
+  const picked=pickFiles(s.mode);
+  if(typeof picked==='string'){setStatus('⚠ '+picked,'err');return;}
+  const T=logspace(s.Tmin,s.Tmax,s.NT);
+
+  setStatus(s.mode==='2D'?'Computing 2D geometric mean…':'Computing…','warn');
+  setTimeout(()=>{
+    try{
+      if(s.mode==='1D') compute1D(picked[0],T,s.xi,s.meth);
+      else compute2D(picked[0],picked[1],T,s.xi,s.meth);
+    }catch(e){ setStatus('✖ Error: '+e.message,'err'); }
+  },30);
+}
+
+function compute1D(f,T,xi,meth){
+  const line=(y,name,color,width)=>({x:T,y,mode:'lines',name,line:{color,width}});
+  const tr={Sa:[],Sv:[],Sd:[]};
+  if(meth==='all'){
+    const all={};
+    [['nm',C_NM],['nj',C_NJ],['dh',C_DH]].forEach(([m,col])=>{
+      const r=all[m]=toUnits(runMethod(m,f.ag,f.dt,T,xi));
+      for(const k in tr) tr[k].push(line(r[k],METH_NAMES[m],col,1.5));
+    });
+    S.results={T,mode:'1D',meth:'all',all};
+  } else {
+    const r=toUnits(runMethod(meth,f.ag,f.dt,T,xi));
+    const lbl=`${f.name} [${f.comp}] — ξ=${xi}`;
+    for(const k in tr) tr[k].push(line(r[k],lbl,C_EW,2));
+    S.results={T,mode:'1D',meth,Sa:r.Sa,Sv:r.Sv,Sd:r.Sd};
+  }
+  plotSpectra(tr.Sa,tr.Sv,tr.Sd,`PSa (g) — ξ=${xi} — ${meth==='all'?'All Methods':METH_NAMES[meth]}`);
+  plotRecord([f]);
+  setStatus(`✔ Done. ${T.length} periods, dt=${f.dt} s, N=${f.ag.length} steps.`,'ok');
+}
+
+function compute2D(fEW,fNS,T,xi,meth){
+  // the method overlay is a 1D feature; like the MATLAB GUI, the GM is then based on Newmark-β
+  const m=meth==='all'?'nm':meth;
+  const E=toUnits(runMethod(m,fEW.ag,fEW.dt,T,xi));
+  const N=toUnits(runMethod(m,fNS.ag,fNS.dt,T,xi));
+  const gm=k=>E[k].map((v,i)=>Math.sqrt(v*N[k][i]));
+  const GM={Sa:gm('Sa'),Sv:gm('Sv'),Sd:gm('Sd')};
+
+  const line=(y,name,color,dash='solid')=>({x:T,y,mode:'lines',name,line:{color,width:2,dash}});
+  const tr=k=>[line(E[k],'E-W',C_EW),line(N[k],'N-S',C_NS),line(GM[k],'Geom. Mean',C_GM,'dash')];
+
+  S.results={T,mode:'2D',meth:m,
+    Sa_EW:E.Sa,Sa_NS:N.Sa,Sa_GM:GM.Sa, Sv_EW:E.Sv,Sv_NS:N.Sv,Sv_GM:GM.Sv, Sd_EW:E.Sd,Sd_NS:N.Sd,Sd_GM:GM.Sd};
+  plotSpectra(tr('Sa'),tr('Sv'),tr('Sd'),`PSa (g) — ξ=${xi} — 2D Geometric Mean [${METH_NAMES[m]}]`);
+  plotRecord([fEW,fNS]);
+  setStatus(`✔ Done. 2D GM computed. EW: ${fEW.name}  NS: ${fNS.name}`
+    +(meth==='all'?'  (the 3-method overlay is 1D only — Newmark-β used)':''),'ok');
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -840,8 +817,13 @@ function plotRecord(files){
   };
   Plotly.react('plt-rec',traces,layout,{responsive:true,displayModeBar:false});
 }
+
+// ══════════════════════════════════════════════════════════════════════
+//  SPECTRUM PLOTS
+// ══════════════════════════════════════════════════════════════════════
 const FONT={family:'IBM Plex Sans'};
 const AXSTYLE={gridcolor:'#e5e8f0',zeroline:false,titlefont:FONT,tickfont:FONT};
+const SPEC_PLOTS=['plt-sa','plt-sv','plt-sd'];
 
 function makeLayout(title,yLabel,showLegend){
   const l={
@@ -857,16 +839,16 @@ function makeLayout(title,yLabel,showLegend){
   return l;
 }
 
-function plotSpectra(ts_sa,ts_sv,ts_sd,titleSa,ylSa,ylSv,ylSd,showAllLegend){
-  const showLegSa=showAllLegend||ts_sa.length>1;
-  const showLegOther=!!showAllLegend;
-  Plotly.react('plt-sa',ts_sa,makeLayout(titleSa,ylSa,showLegSa),{responsive:true});
-  Plotly.react('plt-sv',ts_sv,makeLayout('PSv  (cm/s)',ylSv,showLegOther),{responsive:true});
-  Plotly.react('plt-sd',ts_sd,makeLayout('Sd  (cm)',ylSd,showLegOther),{responsive:true});
+// the legend is shown on all three plots (or none) so their x-axes stay aligned
+function plotSpectra(sa,sv,sd,titleSa){
+  const leg=sa.length>1;
+  Plotly.react('plt-sa',sa,makeLayout(titleSa,'PSa  (g)',leg),{responsive:true});
+  Plotly.react('plt-sv',sv,makeLayout('PSv  (cm/s)','PSv  (cm/s)',leg),{responsive:true});
+  Plotly.react('plt-sd',sd,makeLayout('Sd  (cm)','Sd  (cm)',leg),{responsive:true});
 }
 
 function clearPlots(){
-  ['plt-rec','plt-sa','plt-sv','plt-sd'].forEach(id=>Plotly.purge(id));
+  ['plt-rec',...SPEC_PLOTS].forEach(id=>Plotly.purge(id));
   S.results=null;
   initPlots();
   document.getElementById('comp-status').textContent='';
@@ -880,7 +862,7 @@ function initPlots(){
     annotations:[{x:0.5,y:0.5,xref:'paper',yref:'paper',text:'Record will appear here after Compute',
       font:{size:11,color:'#bbb'},showarrow:false}]};
   Plotly.react('plt-rec',[],emptyRec,cfg);
-  ['plt-sa','plt-sv','plt-sd'].forEach((id,i)=>{
+  SPEC_PLOTS.forEach((id,i)=>{
     const ylabels=['PSa  (g)','PSv  (cm/s)','Sd  (cm)'];
     Plotly.react(id,[],{
       ...makeLayout('',ylabels[i],false),
@@ -891,20 +873,26 @@ function initPlots(){
 }
 
 // ══════════════════════════════════════════════════════════════════════
-//  AXIS LIMITS
+//  AXIS LIMITS  (change the view only — nothing is recomputed)
 // ══════════════════════════════════════════════════════════════════════
+function setXRange(){
+  const upd=S.axLimits
+    ?{'xaxis.range':[S.axLimits.xmin,S.axLimits.xmax],'xaxis.autorange':false}
+    :{'xaxis.autorange':true};
+  SPEC_PLOTS.forEach(id=>Plotly.relayout(id,upd));
+}
 function applyAxis(){
-  S.axLimits={
-    xmin:parseFloat(document.getElementById('xmin').value)||0,
-    xmax:parseFloat(document.getElementById('xmax').value)||4,
-  };
-  if(S.results) compute(); else initPlots();
+  const xmin=parseFloat(document.getElementById('xmin').value)||0;
+  const xmax=parseFloat(document.getElementById('xmax').value);
+  if(!(xmax>xmin)){alert('X max must be greater than X min.');return;}
+  S.axLimits={xmin,xmax};
+  setXRange();
 }
 function resetAxis(){
   S.axLimits=null;
   document.getElementById('xmin').value=0;
   document.getElementById('xmax').value=4;
-  if(S.results) compute(); else initPlots();
+  setXRange();
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -912,18 +900,27 @@ function resetAxis(){
 // ══════════════════════════════════════════════════════════════════════
 function exportCSV(){
   if(!S.results){alert('No results to export. Run Compute first.');return;}
-  const r=S.results;
-  let csv='Response Spectrum Results\n';
-  csv+=`Method: ${METH_NAMES[r.meth]||r.meth}   Mode: ${r.mode}\n\n`;
-  if(r.mode==='1D'){
-    csv+='T_s,PSa_g,PSv_cms,Sd_cm\n';
-    r.T.forEach((_,i)=>csv+=`${r.T[i].toFixed(5)},${r.Sa[i].toFixed(6)},${r.Sv[i].toFixed(6)},${r.Sd[i].toFixed(6)}\n`);
+  const r=S.results, f=v=>sig(v,10);
+  let cols, methName=METH_NAMES[r.meth];
+  if(r.mode==='2D'){
+    cols=[['PSa_EW_g',r.Sa_EW],['PSa_NS_g',r.Sa_NS],['PSa_GM_g',r.Sa_GM],
+          ['PSv_EW_cms',r.Sv_EW],['PSv_NS_cms',r.Sv_NS],['PSv_GM_cms',r.Sv_GM],
+          ['Sd_EW_cm',r.Sd_EW],['Sd_NS_cm',r.Sd_NS],['Sd_GM_cm',r.Sd_GM]];
+  } else if(r.meth==='all'){
+    methName='All 3 methods (NM = Newmark-β  NJ = Nigam-Jennings  DH = Duhamel)';
+    cols=[];
+    for(const m of ['nm','nj','dh']){
+      const t=m.toUpperCase();
+      cols.push([`PSa_${t}_g`,r.all[m].Sa],[`PSv_${t}_cms`,r.all[m].Sv],[`Sd_${t}_cm`,r.all[m].Sd]);
+    }
   } else {
-    csv+='T_s,PSa_EW_g,PSa_NS_g,PSa_GM_g,PSv_EW_cms,PSv_NS_cms,PSv_GM_cms,Sd_EW_cm,Sd_NS_cm,Sd_GM_cm\n';
-    r.T.forEach((_,i)=>csv+=`${r.T[i].toFixed(5)},${r.Sa_EW[i].toFixed(6)},${r.Sa_NS[i].toFixed(6)},${r.Sa_GM[i].toFixed(6)},${r.Sv_EW[i].toFixed(6)},${r.Sv_NS[i].toFixed(6)},${r.Sv_GM[i].toFixed(6)},${r.Sd_EW[i].toFixed(6)},${r.Sd_NS[i].toFixed(6)},${r.Sd_GM[i].toFixed(6)}\n`);
+    cols=[['PSa_g',r.Sa],['PSv_cms',r.Sv],['Sd_cm',r.Sd]];
   }
+  const out=['Response Spectrum Results',`Method: ${methName}   Mode: ${r.mode}`,'',
+             'T_s,'+cols.map(c=>c[0]).join(',')];
+  for(let i=0;i<r.T.length;i++) out.push(f(r.T[i])+','+cols.map(c=>f(c[1][i])).join(','));
   const a=Object.assign(document.createElement('a'),{
-    href:URL.createObjectURL(new Blob([csv],{type:'text/csv'})),download:'ResponseSpectrum.csv'
+    href:URL.createObjectURL(new Blob([out.join('\n')+'\n'],{type:'text/csv'})),download:'ResponseSpectrum.csv'
   });
   a.click();
 }
@@ -931,6 +928,7 @@ function exportCSV(){
 // ══════════════════════════════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════════════════════════════
+onModeChange();
 initPlots();
 </script>
 </body>
