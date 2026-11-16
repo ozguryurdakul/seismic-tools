@@ -87,7 +87,7 @@ input[type=checkbox]{accent-color:var(--blue);}
 <div id="panel">
   <div id="hdr">
     <h1>〰 Ground Motion Processor — PGA · PGV · PGD</h1>
-    <p>GroundMotionGUI v1.2 · University of Pardubice · TA CR – SIGMA</p>
+    <p>GroundMotionGUI v1.3 · University of Pardubice · TA CR – SIGMA</p>
   </div>
 
   <div class="tab-bar">
@@ -178,7 +178,8 @@ input[type=checkbox]{accent-color:var(--blue);}
         <span class="lbl bold fix">Pre-event mean (s):</span>
         <input type="number" id="o-pre" class="w70" value="0" min="0" step="1">
       </div>
-      <div class="hint">If &gt; 0, the mean of the first N seconds is removed instead of the polynomial.</div>
+      <div class="hint">If &gt; 0, the mean of the first N seconds is removed instead of the polynomial
+        (the window must hold at least 10 samples and be shorter than the record).</div>
       <div class="row">
         <span class="lbl bold fix">Cosine taper (s):</span>
         <input type="number" id="o-taper" class="w70" value="1" min="0" step="0.5">
@@ -422,25 +423,26 @@ function butterSOS(n, type, f1, f2, fs){
   const zp=sp.map(s=>cdiv(cadd(cx(K),s),csub(cx(K),s)));   // digital poles
   // zeros: s=0 -> z=+1, s=inf -> z=-1 (a highpass has no zeros at inf, so the
   // bilinear map adds none; all extra zeros already come from s=0)
-  // pair poles into sections
-  const cplx=zp.filter(p=>p.im>1e-12).sort((a,b)=>cabs(a)-cabs(b));
-  const real=zp.filter(p=>Math.abs(p.im)<=1e-12).map(p=>p.re).sort((a,b)=>a-b);
-  const secA=[];
-  cplx.forEach(p=>secA.push([-2*p.re,p.re*p.re+p.im*p.im]));
-  for(let i=0;i+1<real.length;i+=2) secA.push([-(real[i]+real[i+1]),real[i]*real[i+1]]);
-  let firstOrder=null; if(real.length%2) firstOrder=real[real.length-1];
-  const sos=[];
-  const nzp=nz0, nzm=nzInf;   // zeros at +1 and -1
-  let zp1=nzp, zm1=nzm;
-  const takeZeros=(k)=>{       // k = 2 (second order) or 1
-    const zs=[];
-    for(let j=0;j<k;j++){
-      if(zp1>0&&(zp1>=zm1)){zs.push(1);zp1--;} else if(zm1>0){zs.push(-1);zm1--;} else if(zp1>0){zs.push(1);zp1--;}
-    }
-    return zs;
-  };
-  secA.forEach(a=>{const z=takeZeros(2);const b=z.length===2?[1,-(z[0]+z[1]),z[0]*z[1]]:[1,-z[0],0];sos.push([b[0],b[1],b[2],a[0],a[1]]);});
-  if(firstOrder!==null){const z=takeZeros(1);sos.push([1,-z[0],0,-firstOrder,0]);}
+  // group poles into sections: each complex pole with its conjugate, real poles in pairs
+  const cplx=zp.filter(p=>p.im>1e-12);
+  const real=zp.filter(p=>Math.abs(p.im)<=1e-12).map(p=>p.re).sort((a,b)=>Math.abs(b)-Math.abs(a));   // closest to unit circle first
+  const secs=[];   // a: [a1,a2], poles: its poles, r: largest pole radius
+  cplx.forEach(p=>secs.push({a:[-2*p.re,p.re*p.re+p.im*p.im],poles:[p.re,p.re],r:cabs(p)}));
+  for(let i=0;i+1<real.length;i+=2)
+    secs.push({a:[-(real[i]+real[i+1]),real[i]*real[i+1]],poles:[real[i],real[i+1]],r:Math.abs(real[i])});
+  if(real.length%2){const p=real[real.length-1];secs.push({a:[-p,0],poles:[p],r:Math.abs(p)});}
+  // zeros (+1 from s=0, −1 from s=∞): starting with the poles closest to the unit circle, each pole
+  // takes the nearest free zero, so the low-frequency poles get the zeros at +1 (SciPy zpk2sos
+  // 'nearest' rule). A section with two poles near z=1 but only one zero at +1 has a gain of ~1e9
+  // and rounding errors explode for high orders / low cut-offs.
+  const zfree={'1':nz0,'-1':nzInf};
+  const takeZero=re=>{const near=re>=0?1:-1, z=zfree[near]>0?near:-near; zfree[z]--; return z;};
+  secs.sort((x,y)=>y.r-x.r).forEach(s=>{
+    const zs=s.poles.map(takeZero);
+    s.b=zs.length===2?[1,-(zs[0]+zs[1]),zs[0]*zs[1]]:[1,-zs[0],0];
+  });
+  // sections whose poles are closest to the unit circle go last
+  const sos=secs.sort((x,y)=>x.r-y.r).map(s=>[s.b[0],s.b[1],s.b[2],s.a[0],s.a[1]]);
   // gain: |H|=1 at Nyquist (highpass) or at the band centre (bandpass)
   let w;
   if(type==='highpass') w=Math.PI;
@@ -565,6 +567,10 @@ function processGM(accIn, dt, optIn){
 
   // 2. mean removal (pre-event mean or whole record)
   const npre=Math.round(opt.pre_event_s/dt);
+  if(opt.pre_event_s>0){
+    if(npre<10) throw new Error(`Pre-event window too short: it must contain at least 10 samples (≥ ${+(10*dt).toPrecision(3)} s).`);
+    if(npre>=n) throw new Error(`Pre-event window (${opt.pre_event_s} s) is longer than the record (${+((n-1)*dt).toPrecision(4)} s).`);
+  }
   const m0=npre>=10?mean(acc.subarray(0,Math.min(npre,n))):mean(acc);
   for(let i=0;i<n;i++) acc[i]-=m0;
 
@@ -586,6 +592,7 @@ function processGM(accIn, dt, optIn){
   // 5. zero pads (Boore 2005): total 1.5·order/fc, split between both ends
   const useFilter=opt.filter_type!=='none';
   const npad=(useFilter&&opt.pad)?Math.ceil(0.5*1.5*opt.order/opt.fc_low/dt):0;
+  if(npad>2e6) throw new Error(`Low cut-off ${opt.fc_low} Hz is too low for the zero pads (${(2*npad/1e6).toFixed(1)} million samples). Raise fc or switch zero pads off.`);
   let ap=new Float64Array(n+2*npad); ap.set(acc,npad);
 
   // 6. Butterworth (second-order sections), causal or forward-backward
@@ -633,6 +640,8 @@ const S={
 };
 const UNIT_K={'g':980.665,'cm/s2':1,'m/s2':100,'mm/s2':0.1};
 const C_A='#0000b3',C_V='#cc0000',C_D='#006600',C_RAW='#a9b1c2';
+const fmt=v=>v>=100?v.toFixed(1):v>=1?v.toFixed(2):v.toPrecision(3);   // keeps digits for weak records
+const big=v=>v>=1?v.toFixed(3):v.toPrecision(4);                          // peak-value table
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 // ══════════════════════════════════════════════════════════════════════
@@ -655,17 +664,29 @@ function switchPlot(idx){
 function parseRaw(text){
   const lines=text.replace(/\r/g,'').split('\n');
   const meta={};
-  // PEER NGA .AT2: "NPTS=  7990, DT=   .0050 SEC" then 5 values per row, units g
-  const at2=text.match(/NPTS\s*=\s*(\d+)\s*,\s*DT\s*=\s*([0-9.Ee+-]+)/i);
+  // PEER .AT2, units g, values in rows of 5. Header line:
+  //   NGA-West2: "NPTS=  7990, DT=   .0050 SEC"     older NGA-West1: "  7990    .0050    NPTS, DT"
+  const at2=text.match(/NPTS\s*=\s*(\d+)\s*,\s*DT\s*=\s*([0-9.Ee+-]+)/i)
+          ||text.match(/^\s*(\d+)\s+([0-9.Ee+-]+)\s+NPTS\s*,\s*DT\b/im);
   const dataLineRe=/^[\s\d+\-.,;eE]+$/;
-  const rows=[]; let nc=0; const flat=[];
+  const cand=[];
   for(const line of lines){
     const L=line.trim();
     if(!L) continue;
     const kv=L.match(/^([A-Za-z_/^0-9\-]+)\s*:\s*(.*)$/);
     if(kv){meta[kv[1].toUpperCase()]=kv[2].trim();continue;}
     if(L.includes(':')||!dataLineRe.test(L)) continue;
-    const nums=L.split(/[\s,;]+/).filter(s=>s.length).map(Number);
+    cand.push(L);
+  }
+  // decimal commas (e.g. Czech/Turkish Excel: "0,01;-0,005" or tab separated): no '.' anywhere,
+  // and every line that has a comma also has another separator (';' or whitespace)
+  const decComma=cand.some(L=>L.includes(','))&&!cand.some(L=>L.includes('.'))
+                 &&cand.every(L=>!L.includes(',')||/[;\s]/.test(L));
+  const toNums=decComma?L=>L.split(/[\s;]+/).filter(s=>s.length).map(s=>Number(s.replace(',','.')))
+                       :L=>L.split(/[\s,;]+/).filter(s=>s.length).map(Number);
+  const rows=[]; let nc=0; const flat=[];
+  for(const L of cand){
+    const nums=toNums(L);
     if(!nums.length||nums.some(v=>!isFinite(v))) continue;
     if(at2){flat.push(...nums);continue;}
     if(nc===0) nc=nums.length;
@@ -675,7 +696,7 @@ function parseRaw(text){
     const npts=parseInt(at2[1]);
     return {rows:flat.slice(0,npts).map(v=>[v]),ncols:1,dt:parseFloat(at2[2]),units:'g',fmt:'PEER .AT2'};
   }
-  const out={rows,ncols:nc,dt:null,units:null,fmt:'text'};
+  const out={rows,ncols:nc,dt:null,units:null,fmt:'text',decComma};
   const dtKey=['SAMPLING_INTERVAL_S','DT','SAMPLING_INTERVAL'].find(k=>meta[k]&&isFinite(parseFloat(meta[k])));
   if(dtKey){out.dt=parseFloat(meta[dtKey]);out.fmt='header';}
   if(meta.UNITS){
@@ -736,9 +757,14 @@ function showModal(fname,parsed){
       if(parsed.dt) msg.push(`dt = ${parsed.dt} s read from header.`);
       if(parsed.units) msg.push(`Units ${parsed.units} read from header.`);
     }
+    if(parsed.decComma) msg.push('Decimal commas detected.');
     if(!parsed.units) msg.push('⚠ Units not found in the file — please select them.');
+    // a column that increases like time but failed the uniform-grid test: gaps or uneven steps
+    const rising=j=>parsed.rows.every((r,i)=>i===0||r[j]>parsed.rows[i-1][j]);
+    const badT=nc>1?parsed.tdt.findIndex((v,j)=>v===null&&rising(j)):-1;
+    if(badT>=0) msg.push(`⚠ Col ${badT+1} looks like time but is not uniformly sampled (gaps or uneven steps) — resample the file first.`);
     const md=document.getElementById('m-detect');
-    md.textContent=msg.join(' '); md.className='info '+(parsed.units?'ok':'warn');
+    md.textContent=msg.join(' '); md.className='info '+(parsed.units&&badT<0?'ok':'warn');
     onTimeColChange();
     document.getElementById('file-modal').classList.add('open');
   });
@@ -874,7 +900,9 @@ function compute(){
       const R0=processGM(f.acc,f.dt,{...opt,baseline_order:-1,pre_event_s:0,filter_type:'none',taper_s:0,disp_poly_order:0});
       const fcs=[...new Set(document.getElementById('o-sweep').value.split(/[\s,;]+/).filter(v=>v!=='').map(Number).concat(opt.fc_low))].sort((a,b)=>a-b)
         .filter(v=>v>0&&v<0.5/f.dt&&(opt.filter_type!=='bandpass'||v<opt.fc_high));
-      const sweep=opt.filter_type==='none'?[]:fcs.map(fc=>{const r=processGM(f.acc,f.dt,{...opt,fc_low:fc});return {fc,PGV:r.PGV,PGD:r.PGD};});
+      const sweep=opt.filter_type==='none'?[]:fcs.map(fc=>{
+        try{const r=processGM(f.acc,f.dt,{...opt,fc_low:fc});return {fc,PGV:r.PGV,PGD:r.PGD};}catch(e){return null;}   // e.g. pads too long
+      }).filter(Boolean);
       const raw=integrateAcc(f.acc,f.dt,opt.integration);
       const R1=processGM(f.acc,f.dt,{...opt,filter_type:'none',disp_poly_order:0});
       const pk=x=>{let m=0;for(const v of x)m=Math.max(m,Math.abs(v));return m;};
@@ -883,14 +911,14 @@ function compute(){
         ['1. Raw record (no correction)',pk(raw.v),pk(raw.d)],
         ['2. Mean removed',R0.PGV,R0.PGD],
         [`3. + baseline (${bl}) + taper`,R1.PGV,R1.PGD],
-        [opt.filter_type==='none'?'4. No filter (= result)':`4. + ${opt.filter_type} filter (= result)`,R.PGV,R.PGD]];
+        [(opt.filter_type==='none'?'4. No filter':`4. + ${opt.filter_type} filter`)+(opt.disp_poly_order?' + drift fix':'')+' (= result)',R.PGV,R.PGD]];
       S.res={f,R,R0,sweep,opt,steps,
         AI:ariasIntensity(R.acc,f.dt), AIraw:ariasIntensity(f.acc,f.dt),
         th:[{acc:f.acc,vel:raw.v,dis:raw.d},{acc:R0.acc,vel:R0.vel,dis:R0.dis},{acc:R1.acc,vel:R1.vel,dis:R1.dis},{acc:R.acc,vel:R.vel,dis:R.dis}]};
       plotAll(); showResults();
-      status.textContent=`✔ ${f.name}: PGA ${R.PGA.toFixed(2)} cm/s², PGV ${R.PGV.toFixed(2)} cm/s, PGD ${R.PGD.toFixed(2)} cm`+adjNote;
+      status.textContent=`✔ ${f.name}: PGA ${fmt(R.PGA)} cm/s², PGV ${fmt(R.PGV)} cm/s, PGD ${fmt(R.PGD)} cm`+adjNote;
       status.className='info '+(adjNote?'warn':'ok');
-    }catch(e){status.textContent='⚠ '+e.message;status.className='info err';}
+    }catch(e){status.textContent='⚠ '+e.message;status.className='info err';alert(e.message);}
   },30);
 }
 
@@ -903,10 +931,10 @@ function showResults(){
   document.getElementById('res-body').style.display='';
   const row=(k,v,u,t)=>`<tr><td><b>${k}</b></td><td class="num"><span class="res-big">${v}</span> ${u}</td><td class="num">${t}</td></tr>`;
   document.getElementById('res-peaks').innerHTML=
-    row('PGA',R.PGA.toFixed(3),'cm/s²',(f.t0+R.tPGA).toFixed(3))+
-    `<tr><td></td><td class="num">${(R.PGA/980.665).toFixed(4)} g</td><td></td></tr>`+
-    row('PGV',R.PGV.toFixed(3),'cm/s',(f.t0+R.tPGV).toFixed(3))+
-    row('PGD',R.PGD.toFixed(3),'cm',(f.t0+R.tPGD).toFixed(3));
+    row('PGA',big(R.PGA),'cm/s²',(f.t0+R.tPGA).toFixed(3))+
+    `<tr><td></td><td class="num">${big(R.PGA/980.665)} g</td><td></td></tr>`+
+    row('PGV',big(R.PGV),'cm/s',(f.t0+R.tPGV).toFixed(3))+
+    row('PGD',big(R.PGD),'cm',(f.t0+R.tPGD).toFixed(3));
   const {AI,AIraw}=S.res, ts=v=>(f.t0+v).toFixed(2);
   document.getElementById('res-arias').innerHTML=
     `<tr><td><b>I<sub>a</sub></b></td><td class="num"><span class="res-big">${AI.Ia.toFixed(2)}</span> cm/s</td></tr>`+
@@ -926,11 +954,14 @@ function showResults(){
   dm.className='info '+(drift?'warn':'ok');
   document.getElementById('res-sweep').innerHTML=sweep.length?sweep.map(s=>{
     const cur=Math.abs(s.fc-opt.fc_low)<1e-12;
-    return `<tr class="${cur?'sel-row':''}"><td>${s.fc}${cur?' ◀':''}</td><td class="num">${s.PGV.toFixed(2)}</td><td class="num">${s.PGD.toFixed(2)}</td></tr>`;
+    return `<tr class="${cur?'sel-row':''}"><td>${s.fc}${cur?' ◀':''}</td><td class="num">${fmt(s.PGV)}</td><td class="num">${fmt(s.PGD)}</td></tr>`;
   }).join(''):'<tr><td colspan="3" style="color:#888;">Filter is off — no sweep.</td></tr>';
   document.getElementById('res-settings').textContent=settingsText(opt,f);
   const st=S.res.steps;
-  document.getElementById('res-steps').innerHTML=st.map((r,i)=>`<tr class="${i===st.length-1?'sel-row':''}"><td>${i===st.length-1?'<b>'+r[0]+'</b>':r[0]}</td><td class="num">${r[1].toFixed(2)}</td><td class="num">${i===st.length-1?'<b>'+r[2].toFixed(2)+'</b>':r[2].toFixed(1)}</td></tr>`).join('');
+  document.getElementById('res-steps').innerHTML=st.map((r,i)=>{
+    const last=i===st.length-1, b=s=>last?'<b>'+s+'</b>':s;
+    return `<tr class="${last?'sel-row':''}"><td>${b(r[0])}</td><td class="num">${fmt(r[1])}</td><td class="num">${b(fmt(r[2]))}</td></tr>`;
+  }).join('');
 }
 function settingsText(o,f){
   const flt=o.filter_type==='none'?'no filter':
@@ -976,9 +1007,9 @@ function plotAll(){
     });
     Plotly.react(id,traces,lay(title,'Time  (s)',yl,{...xr,yaxis:{...AXSTYLE,title:yl,zeroline:true,zerolinecolor:'#ccc',range:rng}}),CFG);
   };
-  draw('plt-acc','acc',C_A,`Acceleration — PGA = ${R.PGA.toFixed(2)} cm/s² (${(R.PGA/980.665).toFixed(3)} g)`,'a  (cm/s²)');
-  draw('plt-vel','vel',C_V,`Velocity — PGV = ${R.PGV.toFixed(2)} cm/s`,'v  (cm/s)');
-  draw('plt-dis','dis',C_D,`Displacement — PGD = ${R.PGD.toFixed(2)} cm`,'d  (cm)');
+  draw('plt-acc','acc',C_A,`Acceleration — PGA = ${fmt(R.PGA)} cm/s² (${(R.PGA/980.665).toPrecision(3)} g)`,'a  (cm/s²)');
+  draw('plt-vel','vel',C_V,`Velocity — PGV = ${fmt(R.PGV)} cm/s`,'v  (cm/s)');
+  draw('plt-dis','dis',C_D,`Displacement — PGD = ${fmt(R.PGD)} cm`,'d  (cm)');
 
   // Fourier: log-log overlay + linear original / filtered (0–50 Hz, same y-scale)
   const fq=Array.from(R.freq).slice(1), A0=Array.from(R0.FAS).slice(1), A1=Array.from(R.FAS).slice(1);
@@ -1045,8 +1076,10 @@ function initPlots(){
 //  EXPORT
 // ══════════════════════════════════════════════════════════════════════
 function download(text,name){
-  const a=Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([text],{type:'text/csv'})),download:name});
-  a.click();
+  const url=URL.createObjectURL(new Blob([text],{type:'text/csv'}));
+  const a=Object.assign(document.createElement('a'),{href:url,download:name});
+  document.body.appendChild(a); a.click(); a.remove();   // attached link: works in Safari/Firefox too
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 function exportTH(){
   if(!S.res){alert('No results to export. Process a record first.');return;}
